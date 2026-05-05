@@ -221,7 +221,7 @@ class Source(AbstractSearchSource):
                     if not title:
                         continue
                     if base_search_category == SEARCH_CAT_BOOKS:
-                        # lazylibrarian can only detect specific date formats / issue numbering for magazines
+                        # magazarr can only detect specific date formats / issue numbering for magazines
                         title = normalize_magazine_title(title)
                     else:
                         title = title.replace(" ", ".")
@@ -270,7 +270,7 @@ class Source(AbstractSearchSource):
                     title_tag = row.find("p", class_="TITLE").find("a")
                     title = title_tag.get_text(strip=True)
                     if base_search_category == SEARCH_CAT_BOOKS:
-                        # lazylibrarian can only detect specific date formats / issue numbering for magazines
+                        # magazarr can only detect specific date formats / issue numbering for magazines
                         title = normalize_magazine_title(title)
                     else:
                         title = title.replace(" ", ".")

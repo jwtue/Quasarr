@@ -2,7 +2,7 @@
 
 <img src="https://raw.githubusercontent.com/rix1337/Quasarr/main/Quasarr.png" data-canonical-src="https://raw.githubusercontent.com/rix1337/Quasarr/main/Quasarr.png" width="64" height="64" />
 
-Quasarr connects JDownloader with Radarr, Sonarr, Lidarr and LazyLibrarian. It also decrypts links protected by
+Quasarr connects JDownloader with Radarr, Sonarr, Lidarr and Magazarr. It also decrypts links protected by
 CAPTCHAs.
 
 [![PyPI version](https://badge.fury.io/py/quasarr.svg)](https://badge.fury.io/py/quasarr)
@@ -49,7 +49,7 @@ login required).
 ## JDownloader
 
 > ⚠️ If using Docker:
-> JDownloader's download path must be available to Radarr/Sonarr/Lidarr/LazyLibrarian with **identical internal and
+> JDownloader's download path must be available to Radarr/Sonarr/Lidarr/Magazarr with **identical internal and
 external
 path mappings**!
 > Matching only the external path is not sufficient.
@@ -61,7 +61,7 @@ path mappings**!
 <summary>Fresh install recommended</summary>
 
 Consider setting up a fresh JDownloader instance. Quasarr will modify JDownloader's settings to enable
-Radarr/Sonarr/Lidarr/LazyLibrarian integration.
+Radarr/Sonarr/Lidarr/Magazarr integration.
 
 </details>
 
@@ -76,12 +76,12 @@ You can manage categories in the Quasarr Web UI.
     * Inside a **download category**, you can whitelist specific mirrors.
     * If specific mirrors are set, downloads will fail unless the release is available from them.
     * This does not affect search results.
-    * This affects the **Quasarr Download Client** in Radarr/Sonarr/Lidarr/LazyLibrarian.
+    * This affects the **Quasarr Download Client** in Radarr/Sonarr/Lidarr and Magazarr.
 * **Search Hostname Whitelist:**
     * Inside a **search category**, you can whitelist specific hostnames.
     * If specific hostnames are set, only these will be searched by the given search category.
     * This affects search results.
-    * This affects the **Quasarr Newznab Indexer** in Radarr/Sonarr/Lidarr/LazyLibrarian.
+    * This affects the **Quasarr Newznab Indexer** in Radarr/Sonarr/Lidarr and Magazarr.
 
 ---
 
@@ -123,41 +123,37 @@ Add Quasarr as a **Generic Newznab Indexer**.
 
 ---
 
-## LazyLibrarian
+## Magazarr
 
-> ⚠️ **Experimental feature** — Report issues when a hostname returns results on its website but not in LazyLibrarian.
+[Magazarr](https://github.com/rix1337/Magazarr) is the magazine companion for Quasarr. It keeps your magazine list,
+searches Quasarr, sends selected releases to Quasarr for download, imports completed PDFs from JDownloader folders, and
+serves your library through OPDS.
 
-<details>
-<summary>Setup instructions</summary>
+Run Magazarr and open `http://127.0.0.1:8090`:
 
-### SABnzbd+ Downloader
+```bash
+docker run -d \
+  --name="Magazarr" \
+  -p 8090:8090 \
+  -v /path/to/magazarr-config:/config:rw \
+  -v /path/to/magazine-library:/library:rw \
+  -v /path/to/jdownloader-output:/output:rw \
+  -e 'TZ'='Europe/Berlin' \
+  ghcr.io/rix1337/magazarr:latest
+```
 
-| Setting  | Value                      |
-|----------|----------------------------|
-| URL/Port | Your Quasarr host and port |
-| API Key  | Your Quasarr API Key       |
-| Category | `docs`                     |
+Set these values in Magazarr:
 
-### Newznab Provider
+| Setting                    | Value                                                                                           |
+|----------------------------|-------------------------------------------------------------------------------------------------|
+| Quasarr URL                | Your Quasarr URL                                                                                |
+| Quasarr API Key            | Your Quasarr API Key                                                                            |
+| Search category            | `7000`                                                                                          |
+| Download category          | `docs`                                                                                          |
+| JDownloader import root    | `/output`, or the same internal path where completed JDownloader packages are visible            |
+| Library directory          | `/library`, or wherever Magazarr should store imported PDFs                                      |
 
-| Setting | Value                |
-|---------|----------------------|
-| URL     | Your Quasarr URL     |
-| API     | Your Quasarr API Key |
-
-### Fix Import & Processing
-
-**Importing:**
-
-- Enable `OpenLibrary api for book/author information`
-- Set Primary Information Source to `OpenLibrary`
-- Add to Import languages: `, Unknown` (German users: `, de, ger, de-DE`)
-
-**Processing → Folders:**
-
-- Add your Quasarr download path (typically `/downloads/Quasarr/`)
-
-</details>
+Magazarr will import the PDF and clean up the completed package folder.
 
 ---
 
@@ -181,7 +177,7 @@ docker run -d \
 
 | Parameter          | Description                                                                                                |
 |--------------------|------------------------------------------------------------------------------------------------------------|
-| `INTERNAL_ADDRESS` | **Required.** Internal URL so Radarr/Sonarr/Lidarr/LazyLibrarian can reach Quasarr. **Must include port.** |
+| `INTERNAL_ADDRESS` | **Required.** Internal URL so Radarr/Sonarr/Lidarr/Magazarr can reach Quasarr. **Must include port.** |
 | `EXTERNAL_ADDRESS` | Optional. External URL (e.g. reverse proxy). Always protect external access with authentication.           |
 | `USER` / `PASS`    | Optional, but recommended! Username / Password to protect the web UI.                                      |
 | `AUTH`             | Authentication mode. Supported values: `form` or `basic`.                                                  |
@@ -250,9 +246,9 @@ Complexity is the killer of small projects like this one. It must be fought at a
 We will not waste precious time on features that will slow future development cycles down.
 Most feature requests can be satisfied by:
 
-- Existing settings in Radarr/Sonarr/Lidarr/LazyLibrarian
+- Existing settings in Radarr/Sonarr/Lidarr/Magazarr
 - Existing settings in JDownloader
-- Existing tools from the *arr ecosystem that integrate directly with Radarr/Sonarr/Lidarr/LazyLibrarian
+- Existing tools from the *arr ecosystem that integrate directly with Radarr/Sonarr/Lidarr/Magazarr
 
 # Roadmap
 

@@ -31,6 +31,7 @@ from quasarr.providers.utils import (
     get_base_search_category_id,
     is_imdb_id,
     is_valid_release,
+    normalize_optional_int,
     release_matches_search_category,
     search_string_in_sanitized_title,
 )
@@ -299,38 +300,33 @@ def _matches_requested_release(
     if base_search_category != SEARCH_CAT_SHOWS:
         return is_valid_release(title, search_category, search_string, season, episode)
 
-    release_season = _normalize_release_number(release.get("season"))
-    release_episode = _normalize_release_number(release.get("episode"))
+    release_season = normalize_optional_int(release.get("season"))
+    release_episode = normalize_optional_int(release.get("episode"))
+    requested_season = normalize_optional_int(season)
+    requested_episode = normalize_optional_int(episode)
     if release_season is None and release_episode is None:
         return is_valid_release(title, search_category, search_string, season, episode)
 
     if not search_string_in_sanitized_title(search_string, title):
         return False
 
-    if season is not None:
+    if requested_season is not None:
         if release_season is None:
             return is_valid_release(
                 title, search_category, search_string, season, episode
             )
-        if release_season != int(season):
+        if release_season != requested_season:
             return False
 
-    if episode is not None:
+    if requested_episode is not None:
         if release_episode is None:
             return is_valid_release(
                 title, search_category, search_string, season, episode
             )
-        if release_episode != int(episode):
+        if release_episode != requested_episode:
             return False
 
     return True
-
-
-def _normalize_release_number(value):
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
 
 
 def _normalize_display_title(title):

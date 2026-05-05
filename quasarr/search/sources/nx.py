@@ -88,7 +88,7 @@ class Source(AbstractSearchSource):
                 if title:
                     try:
                         if base_search_category == SEARCH_CAT_BOOKS:
-                            # lazylibrarian can only detect specific date formats / issue numbering for magazines
+                            # magazarr can only detect specific date formats / issue numbering for magazines
                             title = normalize_magazine_title(title)
 
                         source = f"https://{nx}/release/{item['slug']}"
@@ -215,7 +215,7 @@ class Source(AbstractSearchSource):
                             continue
 
                         if base_search_category == SEARCH_CAT_BOOKS:
-                            # lazylibrarian can only detect specific date formats / issue numbering for magazines
+                            # magazarr can only detect specific date formats / issue numbering for magazines
                             title = normalize_magazine_title(title)
 
                         try:

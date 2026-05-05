@@ -255,7 +255,7 @@ class Source(AbstractSearchSource):
                     title = unescape(title)
                     title_normalized = _normalize_title_for_arr(title)
 
-                    # Filter: Skip if no resolution or codec info (unless LazyLibrarian/Lidarr)
+                    # Filter: Skip if no resolution or codec info (unless Magazarr/Lidarr)
                     if base_search_category not in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
                         if not (
                             RESOLUTION_REGEX.search(title_normalized)

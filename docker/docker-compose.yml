@@ -29,3 +29,20 @@ services:
       - 'FLARESOLVERR_URL=http://10.10.0.1:8191/v1'
       - 'APIKEY_2CAPTCHA=your_2captcha_api_key_here'
       - 'TZ=Europe/Berlin'
+
+  magazarr:
+    container_name: 'Magazarr'
+    image: 'ghcr.io/rix1337/magazarr:latest'
+    restart: unless-stopped
+    depends_on:
+      - quasarr
+    ports:
+      - '8090:8090'
+    volumes:
+      - '/path/to/magazarr-config:/config:rw'
+      - '/path/to/magazine-library:/library:rw'
+      - '/path/to/jdownloader-output:/downloads:rw'
+    environment:
+      - 'TZ=Europe/Berlin'
+      - 'PORT=8090'
+      - 'LISTEN=0.0.0.0'

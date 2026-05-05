@@ -19,6 +19,7 @@ from quasarr.providers.log import debug, error, info, warn
 from quasarr.providers.utils import (
     determine_category,
     determine_search_categories,
+    extract_client_type,
     format_search_cache_family_groups,
     get_search_cache_family_groups,
     has_source_capability_for_category,
@@ -490,8 +491,8 @@ def setup_arr_routes(app):
                         )
 
                     elif mode == "search":
-                        if request_from.lower() in [
-                            "lazylibrarian",
+                        if extract_client_type(request_from) in [
+                            "magazarr",
                             "lidarr",
                         ]:
                             search_phrase = getattr(request.query, "q", "")
@@ -529,7 +530,7 @@ def setup_arr_routes(app):
                             debug(f"Title missing for release from {source}")
                             continue
 
-                        if not "lazylibrarian" in request_from.lower():
+                        if extract_client_type(request_from) != "magazarr":
                             title = f"[{release.get('hostname', '').upper()}] {title}"
 
                         # Get publication date - sources should provide valid dates

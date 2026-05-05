@@ -112,19 +112,18 @@ services:
 #        max-file: "1"
 #    restart: unless-stopped
 #
-#  lazylibrarian:
-#    image: lscr.io/linuxserver/lazylibrarian:latest
-#    container_name: lazylibrarian
+#  magazarr:
+#    image: ghcr.io/rix1337/magazarr:latest
+#    container_name: magazarr
 #    environment:
-#      - PGID=1000
-#      - PUID=1000
 #      - TZ=Europe/Berlin
-#      - CONFIG_VOLUMES=/config/volumes
+#      - PORT=8090
+#      - LISTEN=0.0.0.0
 #    ports:
-#      - "9094:5299"
+#      - "9094:8090"
 #    volumes:
-#      - ${CONFIG_VOLUMES}/lazylibrarian/config:/config
-#      - ${CONFIG_VOLUMES}/lazylibrarian/documents:/documents
+#      - ${CONFIG_VOLUMES}/magazarr/config:/config
+#      - ${CONFIG_VOLUMES}/magazarr/library:/library
 #      - ${CONFIG_VOLUMES}/downloads:/downloads
 #    logging:
 #      options:
