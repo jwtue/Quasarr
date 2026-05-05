@@ -3,7 +3,7 @@ FROM ghcr.io/astral-sh/uv:latest AS uv
 FROM python:3.12-slim-bookworm
 MAINTAINER rix1337
 
-LABEL org.opencontainers.image.description="Quasarr connects JDownloader with Radarr, Sonarr and LazyLibrarian. It also decrypts links protected by CAPTCHAs."
+LABEL org.opencontainers.image.description="Quasarr connects JDownloader with Radarr, Sonarr and Magazarr. It also decrypts links protected by CAPTCHAs."
 
 # Define package name
 ARG PACKAGE_NAME=quasarr

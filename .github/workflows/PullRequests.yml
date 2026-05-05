@@ -10,7 +10,7 @@ concurrency:
 
 env:
   GHCR_ENDPOINT: "ghcr.io/rix1337/quasarr"
-  DESCRIPTION: "Quasarr connects JDownloader with Radarr, Sonarr and LazyLibrarian."
+  DESCRIPTION: "Quasarr connects JDownloader with Radarr, Sonarr and Magazarr."
 
 jobs:
   quality-check:

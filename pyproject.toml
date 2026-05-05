@@ -1,7 +1,7 @@
 [project]
 name = "quasarr"
 dynamic = ["version"]
-description = "Quasarr connects JDownloader with Radarr, Sonarr and LazyLibrarian. It also decrypts links protected by CAPTCHAs."
+description = "Quasarr connects JDownloader with Radarr, Sonarr and Magazarr. It also decrypts links protected by CAPTCHAs."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

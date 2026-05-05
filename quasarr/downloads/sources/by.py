@@ -17,6 +17,38 @@ from quasarr.providers.log import debug, info
 from quasarr.providers.utils import detect_crypter_type
 
 
+def _extract_link_hoster_label(link):
+    labels = []
+
+    text = link.get_text(" ", strip=True)
+    if text:
+        labels.append(text)
+
+    for image in link.find_all("img"):
+        for attr in ("title", "alt", "src"):
+            value = (image.get(attr) or "").strip()
+            if value:
+                labels.append(value)
+
+    deduped = []
+    seen = set()
+    for label in labels:
+        normalized = label.strip().replace(" ", "")
+        key = normalized.lower()
+        if normalized and key not in seen:
+            seen.add(key)
+            deduped.append(normalized)
+
+    return " ".join(deduped)
+
+
+def _direct_hoster_from_url(url):
+    hostname = (urlparse(url).hostname or "").lower()
+    if hostname.startswith("www."):
+        hostname = hostname[4:]
+    return hostname
+
+
 class Source(AbstractDownloadSource):
     initials = "by"
 
@@ -92,7 +124,7 @@ class Source(AbstractDownloadSource):
                     continue
 
                 href = link["href"]
-                link_hostname = link.text.strip().replace(" ", "")
+                link_hostname = _extract_link_hoster_label(link)
                 hostname_lower = link_hostname.lower()
 
                 if mirrors_lower and not any(
@@ -187,8 +219,9 @@ class Source(AbstractDownloadSource):
                     links.append([resolved_url, "filecrypt"])
                     continue
 
-                if not link_hostname and resolved_url:
-                    link_hostname = urlparse(resolved_url).hostname
+                resolved_hostname = _direct_hoster_from_url(resolved_url)
+                if resolved_hostname:
+                    link_hostname = resolved_hostname
 
                 if link_hostname and link_hostname.startswith(
                     ("ddownload", "rapidgator", "turbobit", "filecrypt")

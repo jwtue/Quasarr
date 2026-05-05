@@ -35,7 +35,7 @@ By default, only JDownloader and Flaresolverr are enabled. See next step how to 
 
 **4. Validate your changes**
 
-Use the `cli_tester.py` script to simulate Radarr, Sonarr, and LazyLibrarian interactions.
+Use the `cli_tester.py` script to simulate Radarr, Sonarr, and Magazarr interactions.
 
 ```bash
 uv run cli_tester.py
