@@ -48,7 +48,7 @@ def generate_deterministic_package_id(
     Args:
         title: Release title (e.g., "Movie.Name.2024.1080p.BluRay")
         source_key: Source identifier/hostname shorthand
-        client_type: Client type without version (e.g., "radarr", "sonarr", "lazylibrarian")
+        client_type: Client type without version (e.g., "radarr", "sonarr", "magazarr")
         download_category: Optional download category override
             (e.g., "movies", "tv", "docs")
 

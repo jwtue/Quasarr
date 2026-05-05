@@ -199,7 +199,7 @@ DOWNLOAD_CATEGORIES = {
 
 # Fallback category mapping by client type (used when no valid download category is provided)
 CLIENT_DOWNLOAD_CATEGORY_FALLBACK_MAP = {
-    "lazylibrarian": "docs",
+    "magazarr": "docs",
     "lidarr": "music",
     "radarr": "movies",
     "sonarr": "tv",

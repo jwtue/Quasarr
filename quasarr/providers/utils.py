@@ -804,7 +804,7 @@ def determine_search_categories(request_from, cat_param=None):
         return [SEARCH_CAT_MOVIES]
     elif client_type == "lidarr":
         return [SEARCH_CAT_MUSIC]
-    elif client_type == "lazylibrarian":
+    elif client_type == "magazarr":
         return [SEARCH_CAT_BOOKS]
     elif client_type == "sonarr":
         return [SEARCH_CAT_SHOWS]
@@ -843,7 +843,7 @@ def extract_client_type(request_from):
     Examples:
         "Radarr/6.0.4.10291 (alpine 3.23.2)" → "radarr"
         "Sonarr/4.0.0.123" → "sonarr"
-        "LazyLibrarian/1.0" → "lazylibrarian"
+        "Magazarr/1.0" → "magazarr"
     """
     if not request_from:
         return "unknown"
@@ -858,8 +858,8 @@ def extract_client_type(request_from):
         return "sonarr"
     elif "lidarr" in client:
         return "lidarr"
-    elif "lazylibrarian" in client:
-        return "lazylibrarian"
+    elif "magazarr" in client:
+        return "magazarr"
 
     return client
 
@@ -1141,7 +1141,7 @@ def is_valid_release(
 
 def normalize_magazine_title(title: str) -> str:
     """
-    Massage magazine titles so LazyLibrarian's parser can pick up dates reliably:
+    Massage magazine titles so Magazarr's parser can pick up dates reliably:
     - Convert date-like patterns into space-delimited numeric tokens (YYYY MM DD or YYYY MM).
     - Handle malformed "DD.YYYY.YYYY" cases (e.g., 04.2006.2025 → 2025 06 04).
     - Convert two-part month-year like "3.25" into YYYY MM.

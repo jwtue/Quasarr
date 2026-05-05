@@ -53,7 +53,7 @@ DEFAULT_URL = "http://localhost:8080"
 USER_AGENT_RADARR = "Radarr/3.0.0.0 (Mock Client for Testing)"
 USER_AGENT_SONARR = "Sonarr/3.0.0.0 (Mock Client for Testing)"
 USER_AGENT_LIDARR = "Lidarr/3.0.0.0 (Mock Client for Testing)"
-USER_AGENT_LL = "LazyLibrarian/1.7.0 (Mock Client for Testing)"
+USER_AGENT_MAGAZARR = "Magazarr/1.7.0 (Mock Client for Testing)"
 
 BASE_SEARCH_CATEGORY_CONFIG = {
     2000: {
@@ -88,7 +88,7 @@ BASE_SEARCH_CATEGORY_CONFIG = {
     },
     7000: {
         "mode": "book",
-        "user_agent": USER_AGENT_LL,
+        "user_agent": USER_AGENT_MAGAZARR,
         "download_category": "docs",
         "query_param": "title",
         "query_validator": None,
@@ -1120,7 +1120,7 @@ class QuasarrClient:
         elif category == "music":
             user_agent = USER_AGENT_LIDARR
         elif category == "docs":
-            user_agent = USER_AGENT_LL
+            user_agent = USER_AGENT_MAGAZARR
 
         resp = self._get(params, user_agent)
         if not resp:
