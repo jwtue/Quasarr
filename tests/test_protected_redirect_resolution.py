@@ -121,6 +121,120 @@ class ProtectedRedirectSourceTests(unittest.TestCase):
             redirect_requests,
         )
 
+    def test_by_matches_requested_mirror_from_icon_only_iframe_link(self):
+        release_url = "https://host-by.invalid/release-icons.html"
+        iframe_url = "https://host-by.invalid/frame-icons.html"
+        go_url = "https://host-by.invalid/go.php?hash=icons"
+        protected_url = "https://protected.invalid/container/by-icons"
+
+        release_html = f'<html><iframe src="{iframe_url}"></iframe></html>'
+        iframe_html = f"""
+            <html>
+                <a href="{go_url}" target="_blank" class="loadbutton">
+                    <span class="green-dot" title="Online"></span>
+                    <img src="/widgets/favicons/turbobit.net.ico" title="turbobit.net">
+                    <img src="/widgets/favicons/rapidgator.net.ico" title="rapidgator.net">
+                    <img src="/widgets/favicons/nitroflare.com.ico" title="nitroflare.com">
+                </a>
+            </html>
+        """
+
+        def fake_get(url, headers=None, timeout=None, allow_redirects=True):
+            if url == release_url:
+                return FakeResponse(url=release_url, text=release_html)
+            if url == iframe_url:
+                return FakeResponse(url=iframe_url, text=iframe_html)
+            raise AssertionError(f"Unexpected URL requested: {url}")
+
+        class FakeSession:
+            def get(self, url, headers=None, timeout=None, allow_redirects=True):
+                if url == go_url:
+                    return FakeResponse(
+                        url=go_url,
+                        status_code=302,
+                        headers={"Location": protected_url},
+                    )
+                raise AssertionError(f"Unexpected URL requested: {url}")
+
+        with (
+            patch("quasarr.downloads.sources.by.requests.get", side_effect=fake_get),
+            patch(
+                "quasarr.downloads.sources.by.requests.Session",
+                return_value=FakeSession(),
+            ),
+            patch(
+                "quasarr.downloads.sources.by.detect_crypter_type",
+                side_effect=lambda url: "filecrypt" if url == protected_url else None,
+            ),
+        ):
+            result = BySource().get_download_links(
+                _build_shared_state({"by": "host-by.invalid"}),
+                release_url,
+                ["rapidgator"],
+                "GameStar - 2026 05",
+                None,
+            )
+
+        self.assertEqual({"links": [[protected_url, "filecrypt"]]}, result)
+
+    def test_by_uses_resolved_hostname_for_icon_only_direct_link(self):
+        release_url = "https://host-by.invalid/release-direct-icons.html"
+        iframe_url = "https://host-by.invalid/frame-direct-icons.html"
+        go_url = "https://host-by.invalid/go.php?hash=direct-icons"
+        direct_url = "https://rapidgator.net/file/abc123/GameStar.rar.html"
+
+        release_html = f'<html><iframe src="{iframe_url}"></iframe></html>'
+        iframe_html = f"""
+            <html>
+                <a href="{go_url}" target="_blank" class="loadbutton">
+                    <span class="green-dot" title="Online"></span>
+                    <img src="/widgets/favicons/turbobit.net.ico" title="turbobit.net">
+                    <img src="/widgets/favicons/rapidgator.net.ico" title="rapidgator.net">
+                    <img src="/widgets/favicons/nitroflare.com.ico" title="nitroflare.com">
+                </a>
+            </html>
+        """
+
+        def fake_get(url, headers=None, timeout=None, allow_redirects=True):
+            if url == release_url:
+                return FakeResponse(url=release_url, text=release_html)
+            if url == iframe_url:
+                return FakeResponse(url=iframe_url, text=iframe_html)
+            raise AssertionError(f"Unexpected URL requested: {url}")
+
+        class FakeSession:
+            def get(self, url, headers=None, timeout=None, allow_redirects=True):
+                if url == go_url:
+                    return FakeResponse(
+                        url=go_url,
+                        status_code=302,
+                        headers={"Location": direct_url},
+                    )
+                if url == direct_url:
+                    return FakeResponse(url=direct_url)
+                raise AssertionError(f"Unexpected URL requested: {url}")
+
+        with (
+            patch("quasarr.downloads.sources.by.requests.get", side_effect=fake_get),
+            patch(
+                "quasarr.downloads.sources.by.requests.Session",
+                return_value=FakeSession(),
+            ),
+            patch(
+                "quasarr.downloads.sources.by.detect_crypter_type",
+                return_value=None,
+            ),
+        ):
+            result = BySource().get_download_links(
+                _build_shared_state({"by": "host-by.invalid"}),
+                release_url,
+                ["rapidgator"],
+                "GameStar - 2026 05",
+                None,
+            )
+
+        self.assertEqual({"links": [[direct_url, "rapidgator.net"]]}, result)
+
     def test_nk_yields_protected_url_without_requesting_it(self):
         release_url = "https://host-nk.invalid/release-1.html"
         go_url = "https://host-nk.invalid/go/4696/ddl.to"
