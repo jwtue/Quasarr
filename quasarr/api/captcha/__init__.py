@@ -203,6 +203,25 @@ def setup_captcha_routes(app):
     def encode_payload(payload):
         return urlsafe_b64encode(json.dumps(payload).encode()).decode()
 
+    def render_captcha_success_page(title, link_count, package_id):
+        remaining_protected = shared_state.get_db("protected").retrieve_all_titles()
+        if remaining_protected:
+            solve_button = render_button(
+                "Solve another CAPTCHA",
+                "primary",
+                {"onclick": "location.href='/captcha'"},
+            )
+        else:
+            solve_button = "<b>No more CAPTCHAs</b>"
+
+        return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+        <p><b>✅ CAPTCHA solved and submitted to JDownloader.</b></p>
+        <p style="word-break: break-all;"><b>Package:</b> {title}</p>
+        <p>{link_count} link(s) processed.</p>
+        <p>{solve_button}</p>
+        <p>{render_button("Back", "secondary", {"onclick": "location.href='/'"})}</p>
+        <script>localStorage.removeItem('captcha_attempts_{package_id}');</script>''')
+
     def render_filecrypt_loading_redirect(target_url, title, status_text):
         return render_centered_html(f"""
             <style>
@@ -1248,31 +1267,7 @@ def setup_captcha_routes(app):
                     f"Quick transfer successful: <g>{len(final_links)}</g> links processed"
                 )
 
-                # Check if more CAPTCHAs remain
-                remaining_protected = shared_state.get_db(
-                    "protected"
-                ).retrieve_all_titles()
-                has_more_captchas = bool(remaining_protected)
-
-                if has_more_captchas:
-                    solve_button = render_button(
-                        "Solve another CAPTCHA",
-                        "primary",
-                        {"onclick": "location.href='/captcha'"},
-                    )
-                else:
-                    solve_button = "<b>No more CAPTCHAs</b>"
-
-                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
-                <p><b>✅ Quick Transfer Successful!</b></p>
-                <p>Package "{title}" with {len(final_links)} link(s) submitted to JDownloader.</p>
-                <p>
-                    {solve_button}
-                </p>
-                <p>
-                    {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
-                </p>
-                <script>localStorage.removeItem('captcha_attempts_{package_id}');</script>''')
+                return render_captcha_success_page(title, len(final_links), package_id)
             else:
                 StatsHelper(shared_state).increment_failed_decryptions_manual()
                 if submit_result.get("persisted_failure"):
@@ -1664,23 +1659,7 @@ def setup_captcha_routes(app):
             StatsHelper(shared_state).increment_package_with_links(final_links)
             StatsHelper(shared_state).increment_captcha_decryptions_manual()
 
-            remaining_protected = shared_state.get_db("protected").retrieve_all_titles()
-            solve_button = (
-                render_button(
-                    "Solve another CAPTCHA",
-                    "primary",
-                    {"onclick": "location.href='/captcha'"},
-                )
-                if remaining_protected
-                else "<b>No more CAPTCHAs</b>"
-            )
-
-            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
-            <p><b>Success!</b> Package "{title}" solved and submitted to JDownloader.</p>
-            <p>{len(final_links)} link(s) processed.</p>
-            <p>{solve_button}</p>
-            <p>{render_button("Back", "secondary", {"onclick": "location.href='/'"})}</p>
-            <script>localStorage.removeItem('captcha_attempts_{package_id}');</script>''')
+            return render_captcha_success_page(title, len(final_links), package_id)
         except Exception as e:
             info(f"Error decrypting Filecrypt Circle-Captcha: {e}")
             StatsHelper(shared_state).increment_failed_decryptions_manual()
@@ -1975,8 +1954,11 @@ def setup_captcha_routes(app):
                             return;
                         }
                         if (data.success) {
-                            document.getElementById("captcha-key").insertAdjacentHTML('afterend', 
-                                '<p>✅ Successful!</p>');
+                            const linkCount = Number.isInteger(data.link_count) ? data.link_count : 0;
+                            document.getElementById("captcha-key").innerHTML =
+                                '<p><b>✅ CAPTCHA solved and submitted to JDownloader.</b></p>' +
+                                '<p style="word-break: break-all;"><b>Package:</b> ' + packageTitleText + '</p>' +
+                                '<p>' + linkCount + ' link(s) processed.</p>';
                             // Clear failed attempts on success
                             if (typeof clearCaptchaAttempts === 'function') {
                                 clearCaptchaAttempts();
@@ -2293,33 +2275,9 @@ def setup_captcha_routes(app):
                     StatsHelper(shared_state).increment_package_with_links(final_links)
                     StatsHelper(shared_state).increment_captcha_decryptions_manual()
 
-                    # Check if there are more CAPTCHAs to solve
-                    remaining_protected = shared_state.get_db(
-                        "protected"
-                    ).retrieve_all_titles()
-                    has_more_captchas = bool(remaining_protected)
-
-                    if has_more_captchas:
-                        solve_button = render_button(
-                            "Solve another CAPTCHA",
-                            "primary",
-                            {
-                                "onclick": "location.href='/captcha'",
-                            },
-                        )
-                    else:
-                        solve_button = "<b>No more CAPTCHAs</b>"
-
-                    return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
-                    <p><b>Success!</b> Package "{title}" bypassed and submitted to JDownloader.</p>
-                    <p>{len(final_links)} link(s) processed.</p>
-                    <p>
-                        {solve_button}
-                    </p>
-                    <p>
-                        {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
-                    </p>
-                    <script>localStorage.removeItem('captcha_attempts_{package_id}');</script>''')
+                    return render_captcha_success_page(
+                        title, len(final_links), package_id
+                    )
                 else:
                     StatsHelper(shared_state).increment_failed_decryptions_manual()
                     if submit_result.get("persisted_failure"):
@@ -2471,5 +2429,6 @@ def setup_captcha_routes(app):
             "success": success,
             "reason": failure_reason,
             "title": title,
+            "link_count": len(links),
             "has_more_captchas": has_more_captchas,
         }
