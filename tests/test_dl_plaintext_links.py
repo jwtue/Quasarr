@@ -73,6 +73,27 @@ class DlPlaintextLinksTests(unittest.TestCase):
             links,
         )
 
+    def test_skips_anchor_text_when_scanning_plaintext_crypter_urls(self):
+        post_html = """
+            <div class="bbWrapper">
+                <b>RapidGator</b>
+                <a href="https://filecrypt.invalid/Container/ABC123.html">
+                    https://filecrypt.invalid/Container/ABC123.html
+                </a>
+            </div>
+        """
+
+        links, _ = _extract_links_and_password_from_post(
+            post_html,
+            "source.invalid",
+            set(),
+        )
+
+        self.assertEqual(
+            [["https://filecrypt.invalid/Container/ABC123.html", "rapidgator", None]],
+            links,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

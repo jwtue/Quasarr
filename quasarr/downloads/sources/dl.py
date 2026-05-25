@@ -441,7 +441,7 @@ def _iter_plaintext_crypter_links(soup):
 
     for text_node in soup.find_all(string=True):
         parent = getattr(text_node, "parent", None)
-        if parent and parent.find_parent("a"):
+        if parent and (parent.name == "a" or parent.find_parent("a")):
             continue
 
         text = str(text_node)
