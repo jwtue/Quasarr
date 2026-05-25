@@ -41,6 +41,7 @@ class FilecryptPowTests(unittest.TestCase):
                 "circle",
             ),
             ('<input name="cap_token">', "cutcaptcha"),
+            ('<button class="download" data-link="abc"></button>', "none"),
             ('<input id="p4assw0rt">', "password"),
             ("<html></html>", "unknown"),
         ]
@@ -158,7 +159,14 @@ class FilecryptPowTests(unittest.TestCase):
                 "https://target.invalid/page",
             )
 
-        self.assertEqual({"status": "captcha_required"}, result)
+        self.assertEqual(
+            {
+                "status": "captcha_required",
+                "url": "https://target.invalid/page",
+                "cookies": [],
+            },
+            result,
+        )
 
     def test_circle_challenge_returns_separate_required_action(self):
         shared_state = SharedState()
@@ -181,7 +189,11 @@ class FilecryptPowTests(unittest.TestCase):
             )
 
         self.assertEqual(
-            {"status": "circle_required", "url": "https://target.invalid/page"},
+            {
+                "status": "circle_required",
+                "url": "https://target.invalid/page",
+                "cookies": [],
+            },
             result,
         )
 
@@ -269,6 +281,84 @@ class FilecryptPowTests(unittest.TestCase):
         )
         self.assertEqual(
             "https://target.invalid/page", post_call.kwargs["headers"]["Referer"]
+        )
+
+    def test_single_link_button_circle_returns_stateless_handoff(self):
+        shared_state = SharedState()
+        session = requests.Session()
+        session.cookies.set("PHPSESSID", "session", domain="target.invalid", path="/")
+        container = SimpleNamespace(
+            url="https://target.invalid/container",
+            text=(
+                '<div class="container"></div>'
+                '<button class="download" data-target="ABC123"></button>'
+            ),
+            status_code=200,
+        )
+        single_link_circle = SimpleNamespace(
+            url="https://target.invalid/Link/ABC123.html",
+            text='<div class="circle_captcha"></div>',
+            status_code=200,
+        )
+        session.get = Mock(return_value=single_link_circle)
+
+        with patch.object(
+            filecrypt,
+            "ensure_session_cf_bypassed",
+            return_value=(session, {"User-Agent": "agent"}, container),
+        ):
+            result = filecrypt.get_filecrypt_links(
+                shared_state,
+                "",
+                "Example.Release",
+                "https://target.invalid/container",
+            )
+
+        self.assertEqual("single_link_circle_required", result["status"])
+        self.assertEqual("https://target.invalid/Link/ABC123.html", result["url"])
+        self.assertEqual("PHPSESSID", result["cookies"][0]["name"])
+
+    def test_circle_solution_resolves_go_redirect(self):
+        shared_state = SharedState()
+        session = requests.Session()
+        circle = SimpleNamespace(
+            url="https://target.invalid/Link/ABC123.html",
+            text='<div class="circle_captcha"></div>',
+            status_code=200,
+        )
+        go_page = SimpleNamespace(
+            url="https://target.invalid/Link/ABC123.html",
+            text=(
+                "<script>top.location.href="
+                "'https://target.invalid/Go/deadbeef.html';</script>"
+            ),
+            status_code=200,
+        )
+        redirect = SimpleNamespace(
+            url="https://target.invalid/Go/deadbeef.html",
+            text="",
+            status_code=302,
+            headers={"Location": "https://download.invalid/file.bin"},
+        )
+        session.post = Mock(return_value=go_page)
+        session.get = Mock(return_value=redirect)
+
+        with patch.object(
+            filecrypt,
+            "ensure_session_cf_bypassed",
+            return_value=(session, {"User-Agent": "agent"}, circle),
+        ):
+            result = filecrypt.get_filecrypt_links(
+                shared_state,
+                "",
+                "Example.Release",
+                "https://target.invalid/Link/ABC123.html",
+                circle_solution=("180", "229"),
+            )
+
+        self.assertEqual(
+            {"status": "success", "links": ["https://download.invalid/file.bin"]},
+            result,
         )
 
 

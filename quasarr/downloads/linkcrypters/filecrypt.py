@@ -6,7 +6,7 @@ import base64
 import json
 import re
 import xml.dom.minidom
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import dukpy
 import requests
@@ -60,6 +60,8 @@ def detect_filecrypt_captcha_type(html):
     soup = BeautifulSoup(html or "", "html.parser")
     if soup.find("form", {"class": "cnlform"}):
         return _detected_filecrypt_captcha_type("none", "cnlform present")
+    if soup.select_one("button.download"):
+        return _detected_filecrypt_captcha_type("none", "download button present")
     if _get_pow_captcha(soup):
         return _detected_filecrypt_captcha_type("pow", "pow-captcha present")
     if has_filecrypt_circlecaptcha(html):
@@ -314,8 +316,9 @@ def inspect_filecrypt_captcha(shared_state, url, password=None):
     }
 
 
-def prepare_filecrypt_circle_captcha(shared_state, url, password=None):
+def prepare_filecrypt_circle_captcha(shared_state, url, password=None, cookies=None):
     session = requests.Session()
+    _apply_cookie_list(session, cookies)
     headers = {"User-Agent": shared_state.values["user_agent"]}
 
     session, headers, output = ensure_session_cf_bypassed(
@@ -529,6 +532,90 @@ def _apply_cookie_list(session, cookies):
         )
 
 
+def _extract_filecrypt_single_link_urls(soup, base_url):
+    urls = []
+    for button in soup.select("button.download"):
+        link_id = None
+        for name, value in button.attrs.items():
+            if name.startswith("data-") and isinstance(value, str) and value:
+                link_id = value
+                break
+        if not link_id:
+            continue
+        link_url = urljoin(base_url, f"/Link/{link_id}.html")
+        if link_url not in urls:
+            urls.append(link_url)
+    return urls
+
+
+def _extract_filecrypt_go_urls(html, base_url):
+    urls = []
+    for go_url in re.findall(
+        r"""(?:top\.)?location\.href\s*=\s*['"]([^'"]+/Go/[^'"]+\.html)['"]""",
+        html or "",
+    ):
+        absolute = urljoin(base_url, go_url)
+        if absolute not in urls:
+            urls.append(absolute)
+    return urls
+
+
+def _resolve_filecrypt_go_urls(session, headers, go_urls):
+    links = []
+    for go_url in go_urls:
+        debug(f"Resolving Filecrypt Go URL: {go_url}")
+        go_response = session.get(
+            go_url,
+            headers=headers,
+            allow_redirects=False,
+            timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+        )
+        redirect_url = go_response.headers.get("Location")
+        if redirect_url:
+            links.append(urljoin(go_url, redirect_url))
+            continue
+        if go_response.url and not urlparse(go_response.url).netloc.endswith(
+            "filecrypt.cc"
+        ):
+            links.append(go_response.url)
+    return links
+
+
+def _decrypt_filecrypt_single_links(session, headers, soup, page_url):
+    links = []
+    for link_url in _extract_filecrypt_single_link_urls(soup, page_url):
+        info(f"Filecrypt single-link button detected: {link_url}")
+        link_response = session.get(
+            link_url,
+            headers={
+                **headers,
+                "Referer": page_url,
+            },
+            timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+        )
+
+        captcha_type = detect_filecrypt_captcha_type(link_response.text)
+        if captcha_type == "circle":
+            info("Filecrypt single-link Circle-Captcha required.")
+            return {
+                "status": "single_link_circle_required",
+                "url": link_response.url,
+                "cookies": _cookies_for_target(session, link_response.url),
+            }
+        if captcha_type == "cutcaptcha":
+            info("Filecrypt single-link CutCaptcha required.")
+            return {
+                "status": "captcha_required",
+                "url": link_response.url,
+                "cookies": _cookies_for_target(session, link_response.url),
+            }
+
+        go_urls = _extract_filecrypt_go_urls(link_response.text, link_response.url)
+        links.extend(_resolve_filecrypt_go_urls(session, headers, go_urls))
+
+    return {"status": "success", "links": links} if links else False
+
+
 def get_filecrypt_links(
     shared_state,
     token,
@@ -632,6 +719,7 @@ def get_filecrypt_links(
             return {
                 "status": "circle_required",
                 "url": output.url,
+                "cookies": _cookies_for_target(session, output.url),
             }
 
         x, y = circle_solution
@@ -655,14 +743,26 @@ def get_filecrypt_links(
             info("Filecrypt Circle-Captcha was rejected.")
             return False
 
+        go_urls = _extract_filecrypt_go_urls(output.text, output.url)
+        go_links = _resolve_filecrypt_go_urls(session, headers, go_urls)
+        if go_links:
+            return {"status": "success", "links": go_links}
+
     if not token and detect_filecrypt_captcha_type(output.text) == "cutcaptcha":
         info("Filecrypt CutCaptcha required after proof-of-work.")
-        return {"status": "captcha_required"}
+        return {
+            "status": "captcha_required",
+            "url": output.url,
+            "cookies": _cookies_for_target(session, output.url),
+        }
 
-    no_captcha_present = bool(soup.find("form", {"class": "cnlform"}))
+    no_captcha_present = bool(
+        soup.find("form", {"class": "cnlform"})
+        or _extract_filecrypt_single_link_urls(soup, url)
+    )
     if no_captcha_present:
         info("No CAPTCHA present. Skipping token!")
-        debug("Detected no CAPTCHA (CNL direct form).")
+        debug("Detected no CAPTCHA (CNL form or download button).")
     else:
         circle_captcha = has_filecrypt_circlecaptcha(output.text)
         debug(f"Circle captcha present: {circle_captcha}")
@@ -670,6 +770,7 @@ def get_filecrypt_links(
             return {
                 "status": "circle_required",
                 "url": output.url,
+                "cookies": _cookies_for_target(session, output.url),
             }
 
         debug("Submitting final CAPTCHA token.")
@@ -698,6 +799,7 @@ def get_filecrypt_links(
         return {
             "status": "circle_required",
             "url": output.url,
+            "cookies": _cookies_for_target(session, output.url),
         }
 
     solved = bool(soup.find_all("div", {"class": "container"}))
@@ -867,8 +969,22 @@ def get_filecrypt_links(
                     links.extend(DLC(shared_state, dlc_file).decrypt())
                 except:
                     debug("DLC fallback failed, trying button fallback.")
+                    single_link_result = _decrypt_filecrypt_single_links(
+                        session,
+                        headers,
+                        soup,
+                        url,
+                    )
+                    if (
+                        isinstance(single_link_result, dict)
+                        and single_link_result.get("status") != "success"
+                    ):
+                        return single_link_result
+                    if single_link_result:
+                        links.extend(single_link_result.get("links", []))
+                        continue
                     info(
-                        "Click'n'Load and DLC not found. Please use the fallback userscript instead!"
+                        "Click'n'Load, DLC, and single-link fallback not found. Please use the fallback userscript instead!"
                     )
                     return False
 
