@@ -315,7 +315,7 @@ docker run -d \
   -v '/path/to/sponsorshelper-config:/config' \
   -e 'QUASARR_URL'='http://192.168.0.1:8080' \
   -e 'QUASARR_API_KEY'='your_quasarr_api_key_here' \
-  -e 'FLARESOLVERR_URL'='http://10.10.0.1:8191/v1' \
+  -e 'FLARESOLVERR_URL'='http://192.168.0.1:8191/v1' \
   -e 'APIKEY_2CAPTCHA'='your_2captcha_api_key_here' \
   -e 'TZ'='Europe/Berlin' \
   ghcr.io/rix1337/sponsors-helper:latest
