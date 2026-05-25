@@ -63,6 +63,7 @@ class Source(AbstractDownloadSource):
             if not posts:
                 info(f"Could not find any posts in thread: {url}")
                 return {"links": [], "password": ""}
+            posts = _posts_matching_requested_fragment(posts, url)
 
             # Track first post with unverifiable links as fallback
             fallback_links = None
@@ -137,6 +138,33 @@ class Source(AbstractDownloadSource):
             return {"links": [], "password": ""}
 
 
+def _posts_matching_requested_fragment(posts, url):
+    fragment = urlparse(url).fragment
+    if not fragment:
+        return posts
+
+    normalized_fragment = _normalize_post_fragment(fragment)
+    matched_posts = [
+        post for post in posts if _post_matches_fragment(post, normalized_fragment)
+    ]
+    return matched_posts or posts
+
+
+def _post_matches_fragment(post, normalized_fragment):
+    candidates = {
+        _normalize_post_fragment(post.get("id")),
+        _normalize_post_fragment(post.get("data-content")),
+    }
+
+    return normalized_fragment in candidates
+
+
+def _normalize_post_fragment(fragment):
+    normalized = str(fragment or "").strip().lstrip("#").lower()
+    normalized = re.sub(r"^js-", "", normalized)
+    return normalized
+
+
 def _normalize_mirror_name(name):
     """
     Normalize mirror/provider names to a provider root token.
@@ -164,7 +192,7 @@ def _normalize_mirror_name(name):
     # Handle alternative spellings/shorthands
     if normalized in ["rg"]:
         return "rapidgator"
-    if normalized in ["ddl"]:
+    if normalized in ["ddl", "ddlto"]:
         return "ddownload"
 
     return normalized
@@ -344,6 +372,19 @@ def _detect_supported_crypter(href):
     return None
 
 
+def _detect_direct_hoster(href):
+    parsed = urlparse(href)
+    host = (parsed.netloc or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+
+    hoster = _normalize_mirror_name(host)
+    if hoster in SHARE_HOSTERS_LOWERCASE:
+        return hoster
+
+    return None
+
+
 def _build_filecrypt_status_map(soup):
     """
     Build a map of mirror names to FileCrypt status URLs.
@@ -433,9 +474,9 @@ def _extract_mirror_name_from_text(text):
     return None
 
 
-def _iter_plaintext_crypter_links(soup):
+def _iter_plaintext_download_links(soup):
     """
-    Yield crypter URLs rendered as text, preserving the last hoster heading.
+    Yield downloadable URLs rendered as text, preserving the last hoster heading.
     """
     current_mirror = None
 
@@ -458,7 +499,7 @@ def _iter_plaintext_crypter_links(soup):
 
             href = _clean_plaintext_url(match.group(0))
             crypter_type = _detect_supported_crypter(href)
-            if crypter_type:
+            if crypter_type or _detect_direct_hoster(href):
                 yield href, crypter_type, current_mirror
 
             search_start = match.end()
@@ -484,11 +525,20 @@ def _extract_links_and_password_from_post(post_content, host, requested_mirrors=
         if href.startswith("/") or host in href:
             return
 
+        direct_hoster = None
         if not crypter_type:
+            direct_hoster = _detect_direct_hoster(href)
+        if not crypter_type and not direct_hoster:
             debug(f"Unsupported link crypter/hoster found: {href}")
             return
 
-        normalized_mirror = _normalize_mirror_name(mirror_name) if mirror_name else None
+        normalized_mirror = (
+            direct_hoster
+            if direct_hoster
+            else _normalize_mirror_name(mirror_name)
+            if mirror_name
+            else None
+        )
 
         if requested_mirrors and normalized_mirror:
             if normalized_mirror not in requested_mirrors:
@@ -497,11 +547,13 @@ def _extract_links_and_password_from_post(post_content, host, requested_mirrors=
         identifier = normalized_mirror if normalized_mirror else crypter_type
 
         # Get status URL - try extraction first, then status map, then generation
-        status_url = (
-            _extract_status_url_from_html(link_element, crypter_type)
-            if link_element
-            else None
-        )
+        status_url = None
+        if crypter_type:
+            status_url = (
+                _extract_status_url_from_html(link_element, crypter_type)
+                if link_element
+                else None
+            )
 
         if not status_url and crypter_type == "filecrypt" and normalized_mirror:
             # Try to find in status map by mirror name (normalized, case-insensitive, TLD-stripped)
@@ -516,19 +568,20 @@ def _extract_links_and_password_from_post(post_content, host, requested_mirrors=
                     status_url = map_url
                     break
 
-        if not status_url:
+        if not status_url and crypter_type:
             status_url = generate_status_url(href, crypter_type)
 
         # Avoid duplicates (check href and identifier)
         if not any(l[0] == href and l[1] == identifier for l in links):
             links.append([href, identifier, status_url])
             status_info = f"status: {status_url}" if status_url else "no status URL"
+            link_type = crypter_type or "direct"
             if mirror_name:
                 debug(
-                    f"Found {crypter_type} link for mirror: {mirror_name} ({status_info})"
+                    f"Found {link_type} link for mirror: {mirror_name} ({status_info})"
                 )
             else:
-                debug(f"Found {crypter_type} link ({status_info})")
+                debug(f"Found {link_type} link ({status_info})")
 
     for link in soup.find_all("a", href=True):
         href = link.get("href")
@@ -540,7 +593,7 @@ def _extract_links_and_password_from_post(post_content, host, requested_mirrors=
             link_element=link,
         )
 
-    for href, crypter_type, mirror_name in _iter_plaintext_crypter_links(soup):
+    for href, crypter_type, mirror_name in _iter_plaintext_download_links(soup):
         add_link(href, crypter_type, mirror_name=mirror_name)
 
     password = ""

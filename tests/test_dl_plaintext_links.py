@@ -94,6 +94,56 @@ class DlPlaintextLinksTests(unittest.TestCase):
             links,
         )
 
+    def test_extracts_direct_hoster_urls(self):
+        post_html = """
+            <div class="bbWrapper">
+                <a href="https://rapidgator.invalid/file/abc">Download</a>
+                <a href="https://ddownload.invalid/example.pdf">Download</a>
+                <a href="https://ddlto.invalid/example.pdf">Download</a>
+                <a href="https://unknown.invalid/example.pdf">Unknown</a>
+            </div>
+        """
+
+        links, password = _extract_links_and_password_from_post(
+            post_html,
+            "source.invalid",
+            set(),
+        )
+
+        self.assertEqual(
+            [
+                ["https://rapidgator.invalid/file/abc", "rapidgator", None],
+                ["https://ddownload.invalid/example.pdf", "ddownload", None],
+                ["https://ddlto.invalid/example.pdf", "ddownload", None],
+            ],
+            links,
+        )
+        self.assertEqual("www.source.invalid", password)
+
+    def test_extracts_plaintext_direct_hoster_urls(self):
+        post_html = """
+            <div class="bbWrapper">
+                <b>DDownload</b>
+                <pre>https://ddownload.invalid/example.pdf</pre>
+                <b>Rapidgator</b>
+                <pre>https://rapidgator.invalid/file/abc</pre>
+            </div>
+        """
+
+        links, _ = _extract_links_and_password_from_post(
+            post_html,
+            "source.invalid",
+            set(),
+        )
+
+        self.assertEqual(
+            [
+                ["https://ddownload.invalid/example.pdf", "ddownload", None],
+                ["https://rapidgator.invalid/file/abc", "rapidgator", None],
+            ],
+            links,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
