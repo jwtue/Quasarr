@@ -9,6 +9,7 @@ dependencies = [
     "bottle>=0.13.4",
     "dukpy>=0.5.1",
     "emoji>=2.15.0",
+    "filelock>=3.29.0",
     "loguru>=0.7.3",
     "pillow==12.2.0",
     "pycryptodomex>=3.23.0",

@@ -1,11 +1,28 @@
 # -*- coding: utf-8 -*-
 # Quasarr
 # Project by https://github.com/rix1337
+"""SQLite key/value store for Quasarr.
+
+Locking contract:
+- Every public method takes the module-level `lock`, including
+  `__init__` (which can create the table on first use) and
+  `maintain` (which runs PRAGMA / VACUUM).
+- The lock is reentrant on the cached `FileLock` instance returned
+  by `get_lock("database")`, so nested calls in the same process
+  (e.g. `__init__` then `retrieve`) do not self-deadlock.
+- Lock order: the database lock is always the *inner* lock when
+  both config and database locks are involved. Never call into
+  `quasarr.storage.config` from inside a DataBase method — that
+  would invert the order and risks AB-BA deadlock across processes.
+"""
 
 import sqlite3
 import time
 
 from quasarr.providers.log import error, warn
+from quasarr.storage.lock import get_lock, with_lock
+
+lock = get_lock("database")
 
 SQLITE_TIMEOUT_SECONDS = 30
 SQLITE_BUSY_TIMEOUT_MS = 30000
@@ -13,6 +30,7 @@ SQLITE_LOCK_ATTEMPTS = 5
 
 
 class DataBase(object):
+    @with_lock(lock)
     def __init__(self, table):
         # Import shared_state inside the method to avoid circular import
         from quasarr.providers import shared_state
@@ -84,6 +102,7 @@ class DataBase(object):
         raise last_error
 
     @classmethod
+    @with_lock(lock)
     def maintain(cls, dbfile):
         conn = None
         try:
@@ -190,6 +209,7 @@ class DataBase(object):
 
         self._with_retry(operation)
 
+    @with_lock(lock)
     def retrieve(self, key):
         def operation():
             query = f"SELECT value FROM {self._table} WHERE key=?"
@@ -198,6 +218,7 @@ class DataBase(object):
 
         return self._with_retry(operation)
 
+    @with_lock(lock)
     def retrieve_all(self, key):
         def operation():
             query = (
@@ -208,6 +229,7 @@ class DataBase(object):
 
         return self._with_retry(operation)
 
+    @with_lock(lock)
     def retrieve_all_titles(self):
         def operation():
             query = f"SELECT distinct key, value FROM {self._table} ORDER BY key"
@@ -217,6 +239,7 @@ class DataBase(object):
 
         return self._with_retry(operation)
 
+    @with_lock(lock)
     def store(self, key, value):
         def operation():
             try:
@@ -230,6 +253,7 @@ class DataBase(object):
 
         return self._with_retry(operation)
 
+    @with_lock(lock)
     def update_store(self, key, value):
         def operation():
             try:
@@ -245,6 +269,7 @@ class DataBase(object):
 
         return self._with_retry(operation)
 
+    @with_lock(lock)
     def delete(self, key):
         def operation():
             try:
@@ -258,6 +283,7 @@ class DataBase(object):
 
         return self._with_retry(operation)
 
+    @with_lock(lock)
     def reset(self):
         def operation():
             try:

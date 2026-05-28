@@ -49,7 +49,7 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 # --- Configuration & Constants ---
-DEFAULT_URL = "http://localhost:8080"
+DEFAULT_URL = f"http://localhost:{int(os.environ.get('PORT', '8080'))}"
 USER_AGENT_RADARR = "Radarr/3.0.0.0 (Mock Client for Testing)"
 USER_AGENT_SONARR = "Sonarr/3.0.0.0 (Mock Client for Testing)"
 USER_AGENT_LIDARR = "Lidarr/3.0.0.0 (Mock Client for Testing)"
@@ -1755,7 +1755,11 @@ def handle_hostname_test(client, interactive=True):
                         if feed_items:
                             for item in feed_items:
                                 family_items.append(
-                                    (feed_type, download_category, item)
+                                    (
+                                        feed_type,
+                                        download_category,
+                                        item,
+                                    )
                                 )
                     except Exception:
                         with progress_lock:
@@ -1864,7 +1868,12 @@ def handle_hostname_test(client, interactive=True):
             items_by_feed_host[_key] = []
 
         items_by_feed_host[_key].append(
-            {"feed": feed_type, "category": category, "host": host, "item": item}
+            {
+                "feed": feed_type,
+                "category": category,
+                "host": host,
+                "item": item,
+            }
         )
 
     # Prepare tasks: one download attempt per hostname per feed.
@@ -1890,7 +1899,11 @@ def handle_hostname_test(client, interactive=True):
         for host in feed_hosts:
             candidates = list(reversed(items_by_feed_host[(feed, host)]))
             tasks_to_process.append(
-                {"feed": feed, "host": host, "candidates": candidates}
+                {
+                    "feed": feed,
+                    "host": host,
+                    "candidates": candidates,
+                }
             )
 
     if interactive:

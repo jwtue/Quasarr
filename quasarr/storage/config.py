@@ -1,6 +1,24 @@
 # -*- coding: utf-8 -*-
 # Quasarr
 # Project by https://github.com/rix1337
+"""Config wrapper for Quasarr.ini.
+
+Locking contract:
+- Write paths (__init__, save, delete, prune_unsupported_keys) take
+  the module-level `lock`. `__init__` is locked because it can write
+  defaults when a section is missing.
+- get() is unlocked and reads from `self.__config__`, the snapshot
+  loaded at __init__ time. Concurrent writes by other processes are
+  not visible to long-lived Config instances; construct fresh
+  instances per logical operation if cross-process freshness matters.
+- Lock order: the config lock may be held while acquiring the
+  database lock (via `_get_encryption_params` -> `DataBase`). Never
+  the reverse — see `sqlite_database.py`.
+- Methods that mutate `self._config` from disk must replace it with a
+  fresh `RawConfigParser()` before reading; `configparser.read()`
+  merges rather than replaces, so deletions by other processes would
+  otherwise be reverted on writeback.
+"""
 
 import base64
 import configparser
@@ -15,7 +33,10 @@ from Cryptodome.Util.Padding import pad
 from quasarr.providers import shared_state
 from quasarr.providers.log import info, warn
 from quasarr.search.sources.helpers import get_hostnames
+from quasarr.storage.lock import get_lock, with_lock
 from quasarr.storage.sqlite_database import DataBase
+
+lock = get_lock("config")
 
 
 class Config(object):
@@ -56,10 +77,12 @@ class Config(object):
     }
     __config__ = []
 
+    @with_lock(lock)
     def __init__(self, section):
         self._configfile = shared_state.values["configfile"]
         self._section = section
         self._config = configparser.RawConfigParser()
+
         try:
             self._config.read(self._configfile)
             self._config.has_section(self._section) or self._set_default_config(
@@ -77,6 +100,7 @@ class Config(object):
         self._config.add_section(section)
         for key, _key_type, value in self._DEFAULT_CONFIG[section]:
             self._config.set(section, key, value)
+
         with open(self._configfile, "w") as configfile:
             self._config.write(configfile)
 
@@ -106,8 +130,10 @@ class Config(object):
         return prune_plan
 
     @classmethod
+    @with_lock(lock)
     def prune_unsupported_keys(cls, configfile):
         config = configparser.RawConfigParser()
+
         config.read(configfile)
 
         prune_plan = cls._build_unsupported_key_plan(config)
@@ -155,20 +181,24 @@ class Config(object):
         return prune_plan
 
     def _get_encryption_params(self):
-        crypt_key = DataBase("secrets").retrieve("key")
-        crypt_iv = DataBase("secrets").retrieve("iv")
+        secrets = DataBase("secrets")
+        crypt_key = secrets.retrieve("key")
+        crypt_iv = secrets.retrieve("iv")
         if crypt_iv and crypt_key:
             return base64.b64decode(crypt_key), base64.b64decode(crypt_iv)
         else:
             crypt_key = get_random_bytes(32)
             crypt_iv = get_random_bytes(16)
-            DataBase("secrets").update_store(
-                "key", base64.b64encode(crypt_key).decode()
-            )
-            DataBase("secrets").update_store("iv", base64.b64encode(crypt_iv).decode())
+            secrets.update_store("key", base64.b64encode(crypt_key).decode())
+            secrets.update_store("iv", base64.b64encode(crypt_iv).decode())
             return crypt_key, crypt_iv
 
     def _set_to_config(self, section, key, value):
+        # Re-sync under outer lock. configparser.read() merges into the
+        # existing parser, so keys removed by other processes would survive
+        # in memory and get revived on writeback. Use a fresh parser.
+        self._config = configparser.RawConfigParser()
+        self._config.read(self._configfile)
         default_value_type = [
             param[1] for param in self._DEFAULT_CONFIG[section] if param[0] == key
         ]
@@ -180,8 +210,7 @@ class Config(object):
             )
             value = "secret|" + value.decode()
         self._config.set(section, key, value)
-        with open(self._configfile, "w") as configfile:
-            self._config.write(configfile)
+        self._write_config()
 
     def _read_config(self, section):
         return [
@@ -230,14 +259,24 @@ class Config(object):
         else:
             return res[0].strip("'\"") if len(res) > 0 else False
 
+    @with_lock(lock)
     def save(self, key, value):
         self._set_to_config(self._section, key, value)
+        self.__config__ = self._read_config(self._section)
         return
 
+    @with_lock(lock)
     def get(self, key):
+        self.__config__ = self._read_config(self._section)
         return self._get_from_config(self.__config__, key)
 
+    @with_lock(lock)
     def delete(self, key):
+        # Re-sync under outer lock. configparser.read() merges into the
+        # existing parser, so keys removed by other processes would survive
+        # in memory and get revived on writeback. Use a fresh parser.
+        self._config = configparser.RawConfigParser()
+        self._config.read(self._configfile)
         if self._config.has_option(self._section, key):
             self._config.remove_option(self._section, key)
             self._write_config()

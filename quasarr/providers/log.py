@@ -61,6 +61,7 @@ _context_replace = {
     "sonarr": "📺",  # /quasarr/storage/setup/sonarr.py
     "sonarr_api": "📺",  # /quasarr/providers/sonarr_api.py
     "api": "🌐",  # /quasarr/api/*
+    "lock": "🔓",  # /quasarr/storage/lock.py
     "captcha": "🧩",  # /quasarr/api/captcha/*
     "config": "⚙️",  # /quasarr/api/config/*
     "sponsors_helper": "💖",  # /quasarr/api/sponsors_helper/*
