@@ -13,6 +13,50 @@ from quasarr.providers.log import debug, info
 from quasarr.providers.utils import check_links_online_status
 
 
+def _collect_online_direct_links(release, mirrors, shared_state):
+    """
+    Build ready-to-use direct download links for a single mirror from the WX
+    'links' field (plain hoster URLs, no crypter/CAPTCHA needed).
+
+    Uses the same filecrypt status badges (options.check) that WX itself uses
+    to display green/red status on their site — identical to the crypted-links
+    path. HEAD-probing the hoster URLs directly is unreliable: premium hosters
+    return HTTP 200 (or redirect to a login page that also resolves 200) for
+    deleted files, making every mirror look online regardless of actual state.
+
+    Returns (online_hoster_count, links) where links is a flat
+    [[url, hoster], ...] list covering every hoster whose badge is green.
+    """
+    links_field = release.get("links", {}) or {}
+    check_urls = release.get("options", {}).get("check", {}) or {}
+
+    links_with_status = []
+
+    for hoster, urls in links_field.items():
+        # Honor the requested mirror whitelist (hoster names).
+        if mirrors and not any(m.lower() in hoster.lower() for m in mirrors):
+            continue
+
+        if not isinstance(urls, list):
+            urls = [urls]
+        clean = [u.strip() for u in urls if isinstance(u, str) and u.strip()]
+        if not clean:
+            continue
+
+        # All parts for the same hoster share one badge — probe once, apply to all.
+        status_url = check_urls.get(hoster)
+        for u in clean:
+            links_with_status.append([u, hoster, status_url])
+
+    if not links_with_status:
+        return 0, []
+
+    online_links = check_links_online_status(links_with_status, shared_state)
+    online_hosters = len(set(link[1] for link in online_links))
+
+    return online_hosters, online_links
+
+
 class Source(AbstractDownloadSource):
     initials = "wx"
 
@@ -81,6 +125,28 @@ class Source(AbstractDownloadSource):
 
             debug(f"Found {len(matching_releases)} mirror(s) for: {title}")
 
+            # PRIORITY: WX exposes ready-to-use direct download links in the
+            # 'links' field for every release. They need no crypter and no
+            # CAPTCHA, so prefer them over the filecrypt/hide containers in
+            # 'crypted_links' (which can break on CAPTCHA, IP bans or FSG).
+            best_direct = None  # (online_hoster_count, links)
+            for idx, release in enumerate(matching_releases):
+                count, direct_links = _collect_online_direct_links(
+                    release, mirrors, shared_state
+                )
+                if direct_links:
+                    debug(f"M{idx + 1} direct links: {count} online hoster(s)")
+                    if best_direct is None or count > best_direct[0]:
+                        best_direct = (count, direct_links)
+
+            if best_direct and best_direct[1]:
+                debug(
+                    f"Using {len(best_direct[1])} direct download link(s) "
+                    f"from best mirror ({best_direct[0]} online hoster(s))"
+                )
+                return {"links": best_direct[1]}
+
+            # FALLBACK: no usable direct links → resolve crypted containers.
             # Evaluate each mirror and find the best one
             # Track: (online_count, is_hide, online_links)
             best_mirror = None  # (online_count, is_hide, online_links)
