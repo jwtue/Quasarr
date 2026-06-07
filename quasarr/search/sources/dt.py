@@ -78,9 +78,10 @@ class Source(AbstractSearchSource):
 
             for article in feed.find_all("article"):
                 try:
-                    link_tag = article.select_one("h4.font-weight-bold a")
+                    link_tag = article.select_one("h1.dt-flexible-title a")
                     if not link_tag:
-                        warn(f"Link tag not found in article: {article}")
+                        # ad/promo articles lack a release title link; skip quietly
+                        debug(f"Link tag not found in article: {article}")
                         continue
 
                     source = link_tag["href"]
@@ -101,7 +102,9 @@ class Source(AbstractSearchSource):
                     except:
                         imdb_id = None
 
-                    body_text = article.find("div", class_="card-body").get_text(" ")
+                    body_text = article.find("div", class_="dt-text-clamp").get_text(
+                        " "
+                    )
                     size_match = re.search(
                         r"(\d+(?:\.\d+)?\s*(?:GB|MB|KB|TB))", body_text, re.IGNORECASE
                     )
@@ -230,7 +233,9 @@ class Source(AbstractSearchSource):
 
             for article in page.find_all("article"):
                 try:
-                    link_tag = article.select_one("h4.font-weight-bold a")
+                    # search-result articles use h1.font-weight-bold, while
+                    # the feed listing uses h1.dt-flexible-title
+                    link_tag = article.select_one("h1.font-weight-bold a")
                     if not link_tag:
                         debug(f"No title link in search-article: {article}")
                         continue
@@ -257,7 +262,9 @@ class Source(AbstractSearchSource):
                     except:
                         imdb_id = None
 
-                    body_text = article.find("div", class_="card-body").get_text(" ")
+                    body_text = article.find("div", class_="dt-text-clamp").get_text(
+                        " "
+                    )
                     m = re.search(
                         r"(\d+(?:\.\d+)?\s*(?:GB|MB|KB|TB))", body_text, re.IGNORECASE
                     )
@@ -329,13 +336,12 @@ def _extract_size(text):
 
 
 def _parse_published_datetime(article):
-    date_box = article.find("div", class_="mr-2 shadow-sm1 text-center")
-    mon = date_box.find("small").text.strip()
-    day = date_box.find("h4").text.strip()
-    year = date_box.find("h6").text.strip()
+    mon = article.select_one("small.dt-fs-11").text.strip()
+    day = article.find("h4", class_="m-0").text.strip()
+    year = article.find("h6", class_="m-0").text.strip()
     month_num = datetime.datetime.strptime(mon, "%b").month
 
-    time_icon = article.select_one("i.fa-clock-o")
+    time_icon = article.select_one("i.bi-clock")
     if time_icon:
         # its parent <span> contains e.g. "19:12"
         raw = time_icon.parent.get_text(strip=True)

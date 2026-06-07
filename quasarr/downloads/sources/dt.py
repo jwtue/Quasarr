@@ -41,7 +41,7 @@ class Source(AbstractDownloadSource):
                 )
                 return None
 
-            body = article.find("div", class_="card-body")
+            body = article.find("div", class_="full-story-body")
             if not body:
                 info(f"Could not find download section for {title}")
                 mark_hostname_issue(
