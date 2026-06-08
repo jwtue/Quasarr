@@ -31,12 +31,13 @@ def _api_payload(releases):
     return {"item": {"releases": releases}}
 
 
-def _release(fulltitle, links, crypted, check=None):
+def _release(fulltitle, links, crypted, check=None, user_id=None):
     return {
         "fulltitle": fulltitle,
         "links": links,
         "crypted_links": crypted,
         "options": {"check": check or {}},
+        "user_id": user_id,
     }
 
 
@@ -87,7 +88,9 @@ class WxDirectLinksTests(unittest.TestCase):
                 SharedState(), self.URL, mirrors or [], self.TITLE, ""
             )
 
-    def test_prefers_direct_links_over_filecrypt(self):
+    def test_prefers_green_filecrypt_container_over_direct(self):
+        # The status badge certifies the container, not the separate direct
+        # upload, so an online filecrypt container outranks the direct links.
         releases = [
             _release(
                 self.TITLE,
@@ -102,38 +105,182 @@ class WxDirectLinksTests(unittest.TestCase):
                     "ddownload.com": "https://filecrypt.cc/Container/AAA.html",
                     "rapidgator.net": "https://filecrypt.cc/Container/BBB.html",
                 },
+                check={
+                    "ddownload.com": "https://filecrypt.cc/Stat/A.png",
+                    "rapidgator.net": "https://filecrypt.cc/Stat/B.png",
+                },
             )
         ]
-        result = self._run(releases)
-        urls = [link[0] for link in result["links"]]
-        # All direct hoster links returned; no filecrypt container leaks through.
+        result = self._run(
+            releases,
+            online_badge_urls={
+                "https://filecrypt.cc/Stat/A.png",
+                "https://filecrypt.cc/Stat/B.png",
+            },
+        )
+        urls = sorted(link[0] for link in result["links"])
+        # The filecrypt containers are handed over; no direct link leaks through.
         self.assertEqual(
-            sorted(urls),
+            urls,
             sorted(
                 [
-                    "https://ddownload.com/a",
-                    "https://ddownload.com/b",
-                    "https://rapidgator.net/file/c",
+                    "https://filecrypt.cc/Container/AAA.html",
+                    "https://filecrypt.cc/Container/BBB.html",
                 ]
             ),
         )
-        self.assertFalse(any("filecrypt" in u for u in urls))
+        self.assertFalse(any("ddownload" in u or "rapidgator" in u for u in urls))
 
-    def test_filecrypt_only_release_still_yields_direct_links(self):
-        # No hide.cx mirror anywhere; crypted is filecrypt-only. Direct links
-        # must still be used instead of failing into the CAPTCHA path.
+    def test_prefers_hide_container_over_filecrypt_and_direct(self):
+        # hide.cx resolves without a CAPTCHA, so a green hide container is the
+        # top tier, above filecrypt containers and direct links.
+        releases = [
+            _release(
+                self.TITLE,
+                {"ddownload.com": ["https://ddownload.com/a"]},
+                {
+                    "ddownload.com": "https://hide.cx/fc/Container/HIDE.html",
+                    "rapidgator.net": "https://filecrypt.cc/Container/BBB.html",
+                },
+                check={
+                    "ddownload.com": "https://filecrypt.cc/Stat/H.png",
+                    "rapidgator.net": "https://filecrypt.cc/Stat/F.png",
+                },
+            )
+        ]
+        result = self._run(
+            releases,
+            online_badge_urls={
+                "https://filecrypt.cc/Stat/H.png",
+                "https://filecrypt.cc/Stat/F.png",
+            },
+        )
+        urls = [link[0] for link in result["links"]]
+        self.assertEqual(urls, ["https://hide.cx/fc/Container/HIDE.html"])
+
+    def test_filecrypt_only_release_uses_container(self):
+        # No hide.cx mirror; the green filecrypt container is handed to
+        # JDownloader rather than the (badge-unverified) direct link.
         releases = [
             _release(
                 self.TITLE,
                 {"rapidgator.net": ["https://rapidgator.net/file/x"]},
                 {"rapidgator.net": "https://filecrypt.cc/Container/ZZZ.html"},
+                check={"rapidgator.net": "https://filecrypt.cc/Stat/Z.png"},
             )
         ]
-        result = self._run(releases)
+        result = self._run(
+            releases,
+            online_badge_urls={"https://filecrypt.cc/Stat/Z.png"},
+        )
         self.assertEqual(
             [link[0] for link in result["links"]],
-            ["https://rapidgator.net/file/x"],
+            ["https://filecrypt.cc/Container/ZZZ.html"],
         )
+
+    def test_user_id_4_filecrypt_rewritten_to_hide(self):
+        # Uploads from user_id 4 mirror their filecrypt.cc container on hide.cx
+        # under the same id; the handler rewrites it to the hide twin (tier 1,
+        # auto-resolved) - mirroring the WX frontend's [4].includes(mirror.user).
+        releases = [
+            _release(
+                self.TITLE,
+                {},
+                {"ddownload.com": "https://filecrypt.cc/Container/AA.html"},
+                check={"ddownload.com": "https://filecrypt.cc/Stat/G.png"},
+                user_id=4,
+            )
+        ]
+        result = self._run(
+            releases,
+            online_badge_urls={"https://filecrypt.cc/Stat/G.png"},
+        )
+        self.assertEqual(
+            [link[0] for link in result["links"]],
+            ["https://hide.cx/fc/Container/AA.html"],
+        )
+
+    def test_other_user_id_filecrypt_not_rewritten(self):
+        # Uploads from other user ids are not mirrored on hide.cx, so the
+        # filecrypt container is kept (tier 2) and not rewritten.
+        releases = [
+            _release(
+                self.TITLE,
+                {},
+                {"ddownload.com": "https://filecrypt.cc/Container/AA.html"},
+                check={"ddownload.com": "https://filecrypt.cc/Stat/G.png"},
+                user_id=188,
+            )
+        ]
+        result = self._run(
+            releases,
+            online_badge_urls={"https://filecrypt.cc/Stat/G.png"},
+        )
+        self.assertEqual(
+            [link[0] for link in result["links"]],
+            ["https://filecrypt.cc/Container/AA.html"],
+        )
+
+    def test_unchecked_container_does_not_preempt_green_direct(self):
+        # A container without a status badge is not certified online and must
+        # not jump ahead of a badge-green direct link.
+        releases = [
+            _release(
+                self.TITLE,
+                {"ddownload.com": ["https://ddownload.com/live"]},
+                {"rapidgator.net": "https://hide.cx/container/NOBADGE"},
+                check={"ddownload.com": "https://filecrypt.cc/Stat/GREEN.png"},
+            )
+        ]
+        result = self._run(
+            releases,
+            online_badge_urls={"https://filecrypt.cc/Stat/GREEN.png"},
+        )
+        urls = [link[0] for link in result["links"]]
+        self.assertEqual(urls, ["https://ddownload.com/live"])
+
+    def test_direct_links_used_when_all_containers_red(self):
+        # Container badge is red, a direct-only hoster has a green badge: with no
+        # online container, fall through to the green direct link (tier 3).
+        releases = [
+            _release(
+                self.TITLE,
+                {"ddownload.com": ["https://ddownload.com/live"]},
+                {"rapidgator.net": "https://filecrypt.cc/Container/RED.html"},
+                check={
+                    "ddownload.com": "https://filecrypt.cc/Stat/GREEN.png",
+                    "rapidgator.net": "https://filecrypt.cc/Stat/RED.png",
+                },
+            )
+        ]
+        result = self._run(
+            releases,
+            online_badge_urls={"https://filecrypt.cc/Stat/GREEN.png"},
+        )
+        urls = [link[0] for link in result["links"]]
+        self.assertEqual(urls, ["https://ddownload.com/live"])
+
+    def test_tier4_first_red_when_nothing_online(self):
+        # Everything is offline-flagged. As a last resort the first red mirror
+        # is handed over (hide preferred), so the release is still attempted.
+        releases = [
+            _release(
+                self.TITLE,
+                {"ddownload.com": ["https://ddownload.com/a"]},
+                {
+                    "ddownload.com": "https://hide.cx/container/ZZ",
+                    "rapidgator.net": "https://filecrypt.cc/Container/BBB.html",
+                },
+                check={
+                    "ddownload.com": "https://filecrypt.cc/Stat/RED1.png",
+                    "rapidgator.net": "https://filecrypt.cc/Stat/RED2.png",
+                },
+            )
+        ]
+        # No badge URLs are online.
+        result = self._run(releases, online_badge_urls=set())
+        urls = [link[0] for link in result["links"]]
+        self.assertEqual(urls, ["https://hide.cx/container/ZZ"])
 
     def test_offline_hoster_is_dropped_but_online_kept(self):
         """
@@ -261,17 +408,103 @@ class WxDirectLinksTests(unittest.TestCase):
         self.assertFalse(any("/m1" in u for u in urls))
 
     def test_falls_back_to_crypted_when_no_direct_links(self):
-        # Empty 'links' field → must fall back to the filecrypt container.
+        # Empty 'links' field → must use the online filecrypt container.
         releases = [
             _release(
                 self.TITLE,
                 {},
                 {"ddownload.com": "https://filecrypt.cc/Container/CCC.html"},
+                check={"ddownload.com": "https://filecrypt.cc/Stat/C.png"},
             )
         ]
-        result = self._run(releases)
+        result = self._run(
+            releases,
+            online_badge_urls={"https://filecrypt.cc/Stat/C.png"},
+        )
         urls = [link[0] for link in result["links"]]
         self.assertEqual(urls, ["https://filecrypt.cc/Container/CCC.html"])
+
+    def test_does_not_merge_containers_across_mirrors(self):
+        # Two distinct mirrors each expose one online hide container. Only one
+        # mirror's set may be returned, never both merged - merging would
+        # enqueue duplicate copies of the same release in JDownloader.
+        m1 = _release(
+            self.TITLE,
+            {},
+            {"ddownload.com": "https://hide.cx/container/M1"},
+            check={"ddownload.com": "https://filecrypt.cc/Stat/M1.png"},
+        )
+        m2 = _release(
+            self.TITLE,
+            {},
+            {"rapidgator.net": "https://hide.cx/container/M2"},
+            check={"rapidgator.net": "https://filecrypt.cc/Stat/M2.png"},
+        )
+        result = self._run(
+            [m1, m2],
+            online_badge_urls={
+                "https://filecrypt.cc/Stat/M1.png",
+                "https://filecrypt.cc/Stat/M2.png",
+            },
+        )
+        urls = [link[0] for link in result["links"]]
+        self.assertEqual(len(urls), 1)
+        self.assertIn(
+            urls[0],
+            ["https://hide.cx/container/M1", "https://hide.cx/container/M2"],
+        )
+
+    def test_keeps_all_online_hosters_within_one_mirror(self):
+        # A single mirror with two online hide containers (different hosters)
+        # keeps both: redundant hoster choices for the same files are desired.
+        m = _release(
+            self.TITLE,
+            {},
+            {
+                "ddownload.com": "https://hide.cx/container/A",
+                "rapidgator.net": "https://hide.cx/container/B",
+            },
+            check={
+                "ddownload.com": "https://filecrypt.cc/Stat/A.png",
+                "rapidgator.net": "https://filecrypt.cc/Stat/B.png",
+            },
+        )
+        result = self._run(
+            [m],
+            online_badge_urls={
+                "https://filecrypt.cc/Stat/A.png",
+                "https://filecrypt.cc/Stat/B.png",
+            },
+        )
+        urls = sorted(link[0] for link in result["links"])
+        self.assertEqual(
+            urls,
+            ["https://hide.cx/container/A", "https://hide.cx/container/B"],
+        )
+
+    def test_tier4_direct_fallback_keeps_all_parts(self):
+        # Last resort with only direct links and a red badge: a multipart hoster
+        # must hand over ALL parts, not just the first, or JDownloader cannot
+        # finish the release if the red badge was a false negative.
+        releases = [
+            _release(
+                self.TITLE,
+                {
+                    "ddownload.com": [
+                        "https://ddownload.com/p1",
+                        "https://ddownload.com/p2",
+                    ]
+                },
+                {},
+                check={"ddownload.com": "https://filecrypt.cc/Stat/RED.png"},
+            )
+        ]
+        result = self._run(releases, online_badge_urls=set())
+        urls = [link[0] for link in result["links"]]
+        self.assertEqual(
+            urls,
+            ["https://ddownload.com/p1", "https://ddownload.com/p2"],
+        )
 
 
 if __name__ == "__main__":

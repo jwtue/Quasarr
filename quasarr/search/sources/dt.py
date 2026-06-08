@@ -109,7 +109,7 @@ class Source(AbstractSearchSource):
                         r"(\d+(?:\.\d+)?\s*(?:GB|MB|KB|TB))", body_text, re.IGNORECASE
                     )
                     if not size_match:
-                        warn(f"Size not found in article for {title_raw}")
+                        debug(f"Size not found in article for {title_raw}")
                         continue
                     size_info = size_match.group(1).strip()
                     size_item = _extract_size(size_info)
