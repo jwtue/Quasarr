@@ -482,6 +482,30 @@ class WxDirectLinksTests(unittest.TestCase):
             ["https://hide.cx/container/A", "https://hide.cx/container/B"],
         )
 
+    def test_tier4_direct_fallback_keeps_all_parts(self):
+        # Last resort with only direct links and a red badge: a multipart hoster
+        # must hand over ALL parts, not just the first, or JDownloader cannot
+        # finish the release if the red badge was a false negative.
+        releases = [
+            _release(
+                self.TITLE,
+                {
+                    "ddownload.com": [
+                        "https://ddownload.com/p1",
+                        "https://ddownload.com/p2",
+                    ]
+                },
+                {},
+                check={"ddownload.com": "https://filecrypt.cc/Stat/RED.png"},
+            )
+        ]
+        result = self._run(releases, online_badge_urls=set())
+        urls = [link[0] for link in result["links"]]
+        self.assertEqual(
+            urls,
+            ["https://ddownload.com/p1", "https://ddownload.com/p2"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

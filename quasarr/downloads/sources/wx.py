@@ -244,11 +244,16 @@ class Source(AbstractDownloadSource):
                             continue
                         if not isinstance(urls, list):
                             urls = [urls]
-                        for u in urls:
-                            if isinstance(u, str) and u.strip():
-                                red_direct = [u.strip(), hoster]
-                                break
-                        if red_direct:
+                        # Keep ALL parts of this hoster: a WX direct hoster can
+                        # be a multipart archive, so a single URL is an
+                        # incomplete mirror that JDownloader cannot finish.
+                        parts = [
+                            [u.strip(), hoster]
+                            for u in urls
+                            if isinstance(u, str) and u.strip()
+                        ]
+                        if parts:
+                            red_direct = parts
                             break
 
             # Tier 1: green hide.cx containers from the best single mirror.
@@ -279,13 +284,20 @@ class Source(AbstractDownloadSource):
             # mirror to JDownloader as a last resort (hide > filecrypt > direct)
             # so the release is still attempted and, if dead, fails cleanly into
             # the Radarr/Sonarr blacklist-and-retry path.
-            red_first = red_hide or red_fc or red_direct
-            if red_first:
+            # Containers are complete on their own (one URL); a direct mirror
+            # keeps all its parts.
+            if red_hide:
+                red_links = [red_hide]
+            elif red_fc:
+                red_links = [red_fc]
+            else:
+                red_links = red_direct
+            if red_links:
                 debug(
                     "Tier 4: no online signal; handing first offline-flagged "
                     "mirror to JDownloader as last resort"
                 )
-                return {"links": [[red_first[0], red_first[1]]]}
+                return {"links": red_links}
 
             info(f"No links found for: {title}")
             return {"links": []}
