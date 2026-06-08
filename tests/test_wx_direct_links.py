@@ -31,12 +31,13 @@ def _api_payload(releases):
     return {"item": {"releases": releases}}
 
 
-def _release(fulltitle, links, crypted, check=None):
+def _release(fulltitle, links, crypted, check=None, user_id=None):
     return {
         "fulltitle": fulltitle,
         "links": links,
         "crypted_links": crypted,
         "options": {"check": check or {}},
+        "user_id": user_id,
     }
 
 
@@ -175,6 +176,49 @@ class WxDirectLinksTests(unittest.TestCase):
         self.assertEqual(
             [link[0] for link in result["links"]],
             ["https://filecrypt.cc/Container/ZZZ.html"],
+        )
+
+    def test_user_id_4_filecrypt_rewritten_to_hide(self):
+        # Uploads from user_id 4 mirror their filecrypt.cc container on hide.cx
+        # under the same id; the handler rewrites it to the hide twin (tier 1,
+        # auto-resolved) - mirroring the WX frontend's [4].includes(mirror.user).
+        releases = [
+            _release(
+                self.TITLE,
+                {},
+                {"ddownload.com": "https://filecrypt.cc/Container/AA.html"},
+                check={"ddownload.com": "https://filecrypt.cc/Stat/G.png"},
+                user_id=4,
+            )
+        ]
+        result = self._run(
+            releases,
+            online_badge_urls={"https://filecrypt.cc/Stat/G.png"},
+        )
+        self.assertEqual(
+            [link[0] for link in result["links"]],
+            ["https://hide.cx/fc/Container/AA.html"],
+        )
+
+    def test_other_user_id_filecrypt_not_rewritten(self):
+        # Uploads from other user ids are not mirrored on hide.cx, so the
+        # filecrypt container is kept (tier 2) and not rewritten.
+        releases = [
+            _release(
+                self.TITLE,
+                {},
+                {"ddownload.com": "https://filecrypt.cc/Container/AA.html"},
+                check={"ddownload.com": "https://filecrypt.cc/Stat/G.png"},
+                user_id=188,
+            )
+        ]
+        result = self._run(
+            releases,
+            online_badge_urls={"https://filecrypt.cc/Stat/G.png"},
+        )
+        self.assertEqual(
+            [link[0] for link in result["links"]],
+            ["https://filecrypt.cc/Container/AA.html"],
         )
 
     def test_unchecked_container_does_not_preempt_green_direct(self):

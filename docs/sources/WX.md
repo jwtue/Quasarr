@@ -40,3 +40,15 @@ prove the direct link is online; preferring the certified container avoids the
 dead-direct-link case at the cost of a CAPTCHA on filecrypt mirrors. Quasarr never
 probes direct-link liveness (JDownloader's job). See
 [Mirror Selection](../Mirror-Selection.md) for the rationale.
+
+### filecrypt to hide.cx twin (user_id)
+
+For uploads from the WX user ids in `HIDE_CX_MIRROR_USER_IDS`, the same container
+is also published on hide.cx under the same id. Their `filecrypt.cc` containers
+are rewritten to the `hide.cx/fc` twin so they auto-resolve via `hide.py` without
+a CAPTCHA (tier 1) instead of going to the filecrypt/SponsorsHelper path. This is
+not a guess: it mirrors the WX frontend exactly, which gates the identical
+`filecrypt.cc -> hide.cx/fc` rewrite on `[4].includes(mirror.user)` (the release
+`user_id`). Uploads from other ids are left as filecrypt. If hide.cx happens not
+to have a given container, `hide.py` returns nothing and the normal
+auto-decrypt to SponsorsHelper fallback applies.

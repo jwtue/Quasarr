@@ -12,6 +12,14 @@ from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
 from quasarr.providers.utils import check_links_online_status
 
+# WX publishes filecrypt and hide.cx as mirror crypters of the same container
+# id. Uploads from these WX user ids are always also published on hide.cx, so
+# their filecrypt.cc containers can be rewritten to the hide.cx twin and resolved
+# automatically via hide.py without a CAPTCHA. This mirrors the WX frontend
+# exactly: app.js gates the identical `filecrypt.cc -> hide.cx/fc` rewrite on
+# `[4].includes(mirror.user)`, where `mirror.user` is the release `user_id`.
+HIDE_CX_MIRROR_USER_IDS = {4}
+
 
 def _collect_online_direct_links(release, mirrors, shared_state):
     """
@@ -158,6 +166,12 @@ class Source(AbstractDownloadSource):
             for release in matching_releases:
                 crypted_links = release.get("crypted_links", {}) or {}
                 check_urls = release.get("options", {}).get("check", {}) or {}
+                # See HIDE_CX_MIRROR_USER_IDS: for these uploaders a filecrypt.cc
+                # container is also published on hide.cx under the same id, so we
+                # use the hide twin (auto-resolved, no CAPTCHA) - exactly what the
+                # WX frontend does for `mirror.user`.
+                user_id = release.get("user_id")
+                mirror_to_hide = user_id in HIDE_CX_MIRROR_USER_IDS
 
                 hide_candidates = []  # [container_url, hoster, status_url]
                 fc_candidates = []
@@ -167,6 +181,13 @@ class Source(AbstractDownloadSource):
                     ):
                         continue
                     state_url = check_urls.get(hoster)
+                    if mirror_to_hide and "filecrypt.cc" in container_url.lower():
+                        container_url = re.sub(
+                            r"filecrypt\.cc",
+                            "hide.cx/fc",
+                            container_url,
+                            flags=re.IGNORECASE,
+                        )
                     if re.search(r"hide\.", container_url, re.IGNORECASE):
                         hide_candidates.append([container_url, hoster, state_url])
                     elif re.search(r"filecrypt\.", container_url, re.IGNORECASE):
