@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 from quasarr.constants import (
     ARCHIVE_EXTENSIONS,
     EXTRACTION_COMPLETE_MARKERS,
+    NOT_DOWNLOADABLE_MARKERS,
     PACKAGE_ID_PATTERN,
 )
 from quasarr.providers.jd_cache import JDPackageCache
@@ -28,6 +29,14 @@ def is_extraction_complete(status):
         return False
     status_lower = status.lower()
     return any(marker in status_lower for marker in EXTRACTION_COMPLETE_MARKERS)
+
+
+def is_not_downloadable(status):
+    """Check if a JDownloader status string marks a link as not downloadable (case-insensitive)."""
+    if not status:
+        return False
+    status_lower = status.lower()
+    return any(marker in status_lower for marker in NOT_DOWNLOADABLE_MARKERS)
 
 
 def is_archive_file(filename, extraction_status=""):
@@ -114,7 +123,9 @@ def get_links_status(package, all_links, is_archive=False):
     has_mirror_all_online = False
     for domain, mirror_links in mirrors.items():
         if all(
-            link.get("availability", "").lower() == "online" for link in mirror_links
+            link.get("availability", "").lower() == "online"
+            and not is_not_downloadable(link.get("status"))
+            for link in mirror_links
         ):
             has_mirror_all_online = True
             debug(f"Mirror '{domain}' has all {len(mirror_links)} links online")
@@ -153,6 +164,9 @@ def get_links_status(package, all_links, is_archive=False):
         link_status_icon = link.get("statusIconKey", "").lower()
         link_eta = link.get("eta", 0) // 1000 if link.get("eta") else 0
 
+        if is_not_downloadable(link_status):
+            link_availability = "not downloadable"
+
         # Determine if THIS LINK is an archive file
         link_is_archive_file = is_archive_file(link_name, link_extraction_status)
 
@@ -167,9 +181,14 @@ def get_links_status(package, all_links, is_archive=False):
         )
 
         # Check for offline links
-        if link_availability == "offline" and not has_mirror_all_online:
-            error = "Links offline for all mirrors"
-            debug(f"ERROR - Link offline with no online mirror: {link_name}")
+        if (
+            link_availability in ["offline", "not downloadable"]
+            and not has_mirror_all_online
+        ):
+            error = f"Links {link_availability} for all mirrors"
+            debug(
+                f"ERROR - Link {link_availability} with no online mirror: {link_name}"
+            )
 
         # Check for file errors
         if link_status_icon == "false":

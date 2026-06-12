@@ -416,6 +416,11 @@ EXTRACTION_COMPLETE_MARKERS = (
     "entpacken ok",  # German
 )
 
+# Status Strings from JDownloader (add more languages if needed)
+NOT_DOWNLOADABLE_MARKERS = (
+    "not downloadable",  # English
+)
+
 # Used during archive detection
 ARCHIVE_EXTENSIONS = frozenset(
     [
