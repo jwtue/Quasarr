@@ -26,3 +26,7 @@
 *.db-wal
 *.ini
 .env
+
+# CI PR-check artifacts
+pr_check_report.md
+pr_number.txt

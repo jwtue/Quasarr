@@ -50,8 +50,10 @@ This tool allows you to test searches, feeds, and downloads without needing the 
 The CI pipeline enforces strict code styling and import optimization. Please run this commands before pushing your
 changes. Alternatively, set up the pre-commit hook as described above.
 
-**Format code AND upgrade dependencies manually:**
+**Format code, upgrade dependencies, run tests and bump the version:**
 
 ```bash
-uv run pre-commit.py --upgrade
+uv run pre-commit.py
 ```
+
+Dependencies are upgraded automatically on every run.

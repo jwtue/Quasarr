@@ -213,13 +213,101 @@ def task_version_bump():
 
 def main():
     is_ci = "--ci" in sys.argv
-    do_upgrade = "--upgrade" in sys.argv or is_ci
+    is_check = "--check" in sys.argv
+
+    # --- CHECK-ONLY MODE (fork-safe) ---
+    # Used for pull requests from forks, where the bot cannot push auto-fixes
+    # back to the contributor's branch. Verify only — never mutate, commit,
+    # push, or bump. Collect every failure into a checklist (written to the
+    # job summary and to pr_check_report.md for the PR-comment workflow), then
+    # exit non-zero if anything failed.
+    if is_check:
+        if "GITHUB_OUTPUT" in os.environ:
+            with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                f.write("changes_pushed=false\n")
+
+        checklist = []  # (passed: bool, label, fix hint)
+
+        # --locked keeps these commands from silently re-syncing uv.lock, so a
+        # pyproject.toml change without a matching lock update is surfaced below.
+        print("\n🔒 --- LOCKFILE (uv lock --check) ---")
+        lock = run(["uv", "lock", "--check"], check=False)
+        checklist.append(
+            (
+                lock.returncode == 0,
+                "Lockfile up to date (uv.lock vs pyproject.toml)",
+                "Run `uv lock` locally and commit the updated `uv.lock`.",
+            )
+        )
+
+        print("\n🔍 --- LINT (ruff check) ---")
+        lint = run(["uv", "run", "--locked", "ruff", "check", "."], check=False)
+        print("\n🎨 --- FORMAT (ruff format --check) ---")
+        fmt = run(
+            ["uv", "run", "--locked", "ruff", "format", "--check", "."], check=False
+        )
+        style_ok = lint.returncode == 0 and fmt.returncode == 0
+        checklist.append(
+            (
+                style_ok,
+                "Lint & formatting (ruff)",
+                "Run `uv run pre-commit.py` locally and commit the result.",
+            )
+        )
+
+        print("\n🧪 --- TESTS ---")
+        test = run(
+            [
+                "uv",
+                "run",
+                "--locked",
+                "python",
+                "-m",
+                "unittest",
+                "discover",
+                "-s",
+                "tests",
+            ],
+            check=False,
+        )
+        checklist.append(
+            (
+                test.returncode == 0,
+                "Unit tests",
+                "Fix the failing tests (see the workflow log for details).",
+            )
+        )
+
+        all_ok = all(p for p, _, _ in checklist)
+        lines = ["## 🤖 Quasarr PR Checks", ""]
+        if all_ok:
+            lines.append("✅ All checks passed — nothing to fix.")
+        else:
+            lines.append("Some checks failed. Please fix and push again:")
+            lines.append("")
+            for passed, label, hint in checklist:
+                box = "x" if passed else " "
+                lines.append(
+                    f"- [{box}] **{label}**" + ("" if passed else f" — {hint}")
+                )
+        report = "\n".join(lines) + "\n"
+
+        Path("pr_check_report.md").write_text(report, encoding="utf-8")
+        if "GITHUB_STEP_SUMMARY" in os.environ:
+            with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+                f.write(report)
+
+        print("\n" + report)
+        if all_ok:
+            print("✨ Check passed.")
+            sys.exit(0)
+        print("❌ ::error::PR checks failed — see the checklist above.")
+        sys.exit(1)
 
     # Run Tasks
     fixed_format = task_format()
-    fixed_deps = False
-    if do_upgrade:
-        fixed_deps = task_upgrade_deps()
+    # Dependencies are always upgraded on every run (no opt-in flag).
+    fixed_deps = task_upgrade_deps()
     task_tests()
 
     fixed_version, new_v = task_version_bump()

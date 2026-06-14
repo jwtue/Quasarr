@@ -15,6 +15,7 @@ on:
       - '.claude/**'
       - '.agents/**'
       - '*.md'
+      - '**/*.md'
     branches:
       - main
 

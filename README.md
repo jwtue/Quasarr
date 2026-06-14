@@ -180,6 +180,8 @@ docker run -d \
   ghcr.io/rix1337/quasarr:latest
   ```
 
+> 🪟 **Windows users:** the single quotes above are for Linux/macOS shells. In Windows `cmd` and PowerShell the quotes are **not** stripped, so they end up as part of the variable name (`'INTERNAL_ADDRESS'` instead of `INTERNAL_ADDRESS`) and Quasarr stops with `You must set the INTERNAL_ADDRESS variable...`. Drop the single quotes and put everything on one line, e.g. `-e INTERNAL_ADDRESS=http://192.168.0.1:8080`.
+
 | Parameter          | Description                                                                                                |
 |--------------------|------------------------------------------------------------------------------------------------------------|
 | `INTERNAL_ADDRESS` | **Required.** Internal URL so Radarr/Sonarr/Lidarr/Magazarr can reach Quasarr. **Must include port.** |
@@ -263,10 +265,9 @@ Most feature requests can be satisfied by:
 - There are no hostname integrations in active development unless you see an open pull request
   [here](https://github.com/rix1337/Quasarr/pulls).
 - **Pull requests are welcome!** Especially for popular hostnames.
-    - Start with [docs/README.md](docs/README.md) for the documentation index.
-      Development setup, local run commands, tests, and linting instructions live in
-      [docs/Development.md](docs/Development.md);
-      commit and PR conventions live in [docs/Contributing.md](docs/Contributing.md).
+    - Start with [AGENTS.md](AGENTS.md) for repository guidelines: development setup,
+      local run commands, tests, linting, and commit/PR conventions.
+      Development environment setup for pull requests also lives in [CONTRIBUTING.md](CONTRIBUTING.md).
     - Always reach out on Discord before starting work on a new feature to prevent waste of time.
     - Please follow the existing code style and project structure.
     - Anti-bot measures must be circumvented fully by Quasarr. Thus, you will need to provide a working solution for new
