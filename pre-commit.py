@@ -213,7 +213,28 @@ def task_version_bump():
 
 def main():
     is_ci = "--ci" in sys.argv
+    is_check = "--check" in sys.argv
     do_upgrade = "--upgrade" in sys.argv or is_ci
+
+    # --- CHECK-ONLY MODE (fork-safe) ---
+    # Used for pull requests from forks, where the bot cannot push auto-fixes
+    # back to the contributor's branch. Verify formatting and tests only; never
+    # commit, push, or bump the version. Fail loudly if the tree isn't clean so
+    # the contributor knows to run pre-commit.py locally.
+    if is_check:
+        fixed_format = task_format()
+        task_tests()
+        if "GITHUB_OUTPUT" in os.environ:
+            with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                f.write("changes_pushed=false\n")
+        if fixed_format:
+            print(
+                "\n❌ ::error::Code style is not clean. Run "
+                "`uv run pre-commit.py` locally and commit the result."
+            )
+            sys.exit(1)
+        print("\n✨ Check passed. Code style is clean and tests are green.")
+        sys.exit(0)
 
     # Run Tasks
     fixed_format = task_format()

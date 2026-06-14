@@ -47,14 +47,23 @@ jobs:
           TARGET_REF: ${{ github.head_ref || github.ref_name }}
           GITHUB_REPO: ${{ github.repository }}
           WORKFLOW_NAME: ${{ github.workflow }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
         run: |
-          echo "🛠️ Running pre-commit.py..."
-          uv run pre-commit.py --ci
+          # Fork PRs: the bot has no write access to the contributor's branch,
+          # so auto-fix-and-push (--ci) fails with a 403. Run a no-push check
+          # instead. Same-repo PRs (the author's own dev→main) keep --ci.
+          if [ -n "$HEAD_REPO" ] && [ "$HEAD_REPO" != "$GITHUB_REPO" ]; then
+            echo "🔱 Fork PR ($HEAD_REPO) — running checks in no-push mode..."
+            uv run pre-commit.py --check
+          else
+            echo "🛠️ Internal PR — running full maintenance..."
+            uv run pre-commit.py --ci
+          fi
           echo "✨ Maintenance complete."
 
   version:
     needs: [ quality-check ]
-    if: needs.quality-check.outputs.changes_pushed != 'true' && ((github.event_name == 'pull_request' && github.head_ref == 'dev' && github.base_ref == 'main') || ((github.event_name == 'workflow_dispatch' || github.event_name == 'push') && github.ref_name == 'dev'))
+    if: needs.quality-check.outputs.changes_pushed != 'true' && ((github.event_name == 'pull_request' && github.head_ref == 'dev' && github.base_ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository) || ((github.event_name == 'workflow_dispatch' || github.event_name == 'push') && github.ref_name == 'dev'))
     runs-on: ubuntu-latest
     timeout-minutes: 1
     outputs:
@@ -78,7 +87,7 @@ jobs:
 
   build-wheel:
     needs: [ quality-check, version ]
-    if: needs.quality-check.outputs.changes_pushed != 'true' && ((github.event_name == 'pull_request' && github.head_ref == 'dev' && github.base_ref == 'main') || ((github.event_name == 'workflow_dispatch' || github.event_name == 'push') && github.ref_name == 'dev'))
+    if: needs.quality-check.outputs.changes_pushed != 'true' && ((github.event_name == 'pull_request' && github.head_ref == 'dev' && github.base_ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository) || ((github.event_name == 'workflow_dispatch' || github.event_name == 'push') && github.ref_name == 'dev'))
     runs-on: ubuntu-latest
     timeout-minutes: 3
     outputs:
@@ -109,7 +118,7 @@ jobs:
 
   build-exe:
     needs: [ quality-check, version ]
-    if: needs.quality-check.outputs.changes_pushed != 'true' && ((github.event_name == 'pull_request' && github.head_ref == 'dev' && github.base_ref == 'main') || ((github.event_name == 'workflow_dispatch' || github.event_name == 'push') && github.ref_name == 'dev'))
+    if: needs.quality-check.outputs.changes_pushed != 'true' && ((github.event_name == 'pull_request' && github.head_ref == 'dev' && github.base_ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository) || ((github.event_name == 'workflow_dispatch' || github.event_name == 'push') && github.ref_name == 'dev'))
     runs-on: windows-latest
     timeout-minutes: 3
     env:
@@ -208,7 +217,7 @@ jobs:
 
   build-docker-amd64:
     needs: [ quality-check, version, build-wheel ]
-    if: needs.quality-check.outputs.changes_pushed != 'true' && ((github.event_name == 'pull_request' && github.head_ref == 'dev' && github.base_ref == 'main') || ((github.event_name == 'workflow_dispatch' || github.event_name == 'push') && github.ref_name == 'dev'))
+    if: needs.quality-check.outputs.changes_pushed != 'true' && ((github.event_name == 'pull_request' && github.head_ref == 'dev' && github.base_ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository) || ((github.event_name == 'workflow_dispatch' || github.event_name == 'push') && github.ref_name == 'dev'))
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
@@ -241,7 +250,7 @@ jobs:
 
   build-docker-arm64:
     needs: [ quality-check, version, build-wheel ]
-    if: needs.quality-check.outputs.changes_pushed != 'true' && ((github.event_name == 'pull_request' && github.head_ref == 'dev' && github.base_ref == 'main') || ((github.event_name == 'workflow_dispatch' || github.event_name == 'push') && github.ref_name == 'dev'))
+    if: needs.quality-check.outputs.changes_pushed != 'true' && ((github.event_name == 'pull_request' && github.head_ref == 'dev' && github.base_ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository) || ((github.event_name == 'workflow_dispatch' || github.event_name == 'push') && github.ref_name == 'dev'))
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 3
     steps:
