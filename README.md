@@ -265,10 +265,9 @@ Most feature requests can be satisfied by:
 - There are no hostname integrations in active development unless you see an open pull request
   [here](https://github.com/rix1337/Quasarr/pulls).
 - **Pull requests are welcome!** Especially for popular hostnames.
-    - Start with [docs/README.md](docs/README.md) for the documentation index.
-      Development setup, local run commands, tests, and linting instructions live in
-      [docs/Development.md](docs/Development.md);
-      commit and PR conventions live in [docs/Contributing.md](docs/Contributing.md).
+    - Start with [AGENTS.md](AGENTS.md) for repository guidelines: development setup,
+      local run commands, tests, linting, and commit/PR conventions.
+      Development environment setup for pull requests also lives in [CONTRIBUTING.md](CONTRIBUTING.md).
     - Always reach out on Discord before starting work on a new feature to prevent waste of time.
     - Please follow the existing code style and project structure.
     - Anti-bot measures must be circumvented fully by Quasarr. Thus, you will need to provide a working solution for new
