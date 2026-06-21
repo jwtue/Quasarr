@@ -857,7 +857,7 @@ def get_packages(shared_state, _cache=None, auto_start=True):
     return downloads
 
 
-def delete_package(shared_state, package_id, package_title=None):
+def delete_package(shared_state, package_id, package_title=None, missing_ok=False):
     """Delete a package from JDownloader and/or the database."""
     debug(
         f"delete_package: Starting deletion of package {package_id} (title: {package_title})"
@@ -918,6 +918,9 @@ def delete_package(shared_state, package_id, package_title=None):
                             matches.append(package)
 
         if not matches:
+            if missing_ok:
+                info(f"Package {package_id} already absent; delete treated as complete")
+                return True
             info(f"Failed to delete package {package_id} - not found by ID or Title")
             return False
 

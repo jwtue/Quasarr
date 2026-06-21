@@ -21,19 +21,19 @@ services:
     restart: unless-stopped
     depends_on:
       - quasarr
-      - flaresolverr-go
+      - flaresolverr-next
     volumes:
       - '/path/to/sponsorshelper-config:/config'
     environment:
       - 'QUASARR_URL=http://192.168.0.1:8080'
       - 'QUASARR_API_KEY=your_quasarr_api_key_here'
-      - 'FLARESOLVERR_URL=http://flaresolverr-go:8191/v1'
+      - 'FLARESOLVERR_URL=http://flaresolverr-next:8191/v1'
       - 'APIKEY_2CAPTCHA=your_2captcha_api_key_here'
       - 'TZ=Europe/Berlin'
 
-  flaresolverr-go:
-    container_name: 'flaresolverr-go'
-    image: 'rorqualx/flaresolverr-go:latest'
+  flaresolverr-next:
+    container_name: 'flaresolverr-next'
+    image: 'ghcr.io/rix1337/flaresolverr-next:latest'
     restart: unless-stopped
     environment:
       - 'TZ=Europe/Berlin'

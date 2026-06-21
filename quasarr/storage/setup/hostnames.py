@@ -505,10 +505,10 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
              if (id === 'al' && isFlaresolverrSkipped) {{
                 flaresolverrWarning = `
                     <div style="margin-bottom: 1rem; padding: 0.75rem; background: #fff3cd; border: 1px solid #ffeeba; border-radius: 0.25rem; color: #856404; font-size: 0.875rem;">
-                        <strong>⚠️ flaresolverr-go Required</strong><br>
-                        This site requires flaresolverr-go, but it was skipped. You must configure it first.
+                        <strong>⚠️ flaresolverr-next Required</strong><br>
+                        This site requires flaresolverr-next, but it was skipped. You must configure it first.
                         <div style="margin-top: 0.5rem;">
-                            <button class="btn-secondary" style="font-size: 0.75rem; padding: 0.25rem 0.5rem;" onclick="window.location.href='/flaresolverr'">Configure flaresolverr-go</button>
+                            <button class="btn-secondary" style="font-size: 0.75rem; padding: 0.25rem 0.5rem;" onclick="window.location.href='/flaresolverr'">Configure flaresolverr-next</button>
                         </div>
                     </div>
                 `;
@@ -873,9 +873,9 @@ def hostname_credentials_config(shared_state, shorthand, domain):
         if is_al_missing_flaresolverr:
             flaresolverr_section = """
              <div style="margin-bottom: 1.5rem; padding: 1rem; background: #fff3cd; border: 1px solid #ffeeba; border-radius: 0.5rem;">
-                <h4 style="margin-top:0; font-size:1rem; color:#856404;">⚠️ flaresolverr-go Required</h4>
+                <h4 style="margin-top:0; font-size:1rem; color:#856404;">⚠️ flaresolverr-next Required</h4>
                 <p style="font-size:0.875rem; margin-bottom:0.5rem; color:#856404;">
-                    This site requires flaresolverr-go. Please configure it below before checking credentials.
+                    This site requires flaresolverr-next. Please configure it below before checking credentials.
                 </p>
                 <form action="/api/flaresolverr_inline" method="post" onsubmit="return handleFlareSolverrSubmit(this)">
                     <div style="display:flex; gap:0.5rem;">
@@ -945,7 +945,7 @@ def hostname_credentials_config(shared_state, shorthand, domain):
 
         function handleSubmit(form) {{
             if (isAlMissingFlaresolverr) {{
-                showModal('flaresolverr-go Required', 'You must configure flaresolverr-go below or skip login for this site.');
+                showModal('flaresolverr-next Required', 'You must configure flaresolverr-next below or skip login for this site.');
                 return false;
             }}
 
@@ -1032,7 +1032,7 @@ def hostname_credentials_config(shared_state, shorthand, domain):
                     "User and Password wrong or empty.<br><br>"
                     "Or if you skipped Flaresolverr setup earlier, "
                     "you must chose to skip login for this site, "
-                    "set up flaresolverr-go in the UI and then restart Quasarr!"
+                    "set up flaresolverr-next in the UI and then restart Quasarr!"
                 )
                 if quasarr.providers.sessions.al.create_and_persist_session(
                     shared_state

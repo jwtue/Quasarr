@@ -199,7 +199,7 @@ def get_api(shared_state_dict, shared_state_lock):
         if is_flaresolverr_skipped:
             flaresolverr_warning = """
             <div class="alert alert-warning" style="margin-bottom: 15px; padding: 10px;">
-                <span style="font-size: 0.9em;">⚠️ flaresolverr-go setup was skipped. Some sites may not work.</span>
+                <span style="font-size: 0.9em;">⚠️ flaresolverr-next setup was skipped. Some sites may not work.</span>
             </div>
             """
 
@@ -420,7 +420,7 @@ def get_api(shared_state_dict, shared_state_lock):
                 <div class="api-settings">
                     {flaresolverr_warning}
                     <p class="api-hint">
-                        <a href="https://github.com/Rorqualx/flaresolverr-go?tab=readme-ov-file#docker-recommended" target="_blank">flaresolverr-go</a>
+                        <a href="https://github.com/rix1337/flaresolverr-next" target="_blank">flaresolverr-next</a>
                         must be running and reachable to Quasarr for some sites to work.
                     </p>
 

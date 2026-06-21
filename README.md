@@ -22,7 +22,7 @@ installed in your browser.
 
 1. Set up and run [JDownloader 2](https://jdownloader.org/download/index)
 2. Configure the integrations below
-3. (Optional) Set up [flaresolverr-go](https://github.com/Rorqualx/flaresolverr-go) for sites that require it
+3. (Optional) Set up [flaresolverr-next](https://github.com/rix1337/flaresolverr-next) for sites that require it
 
 > **Finding your Quasarr URL and API Key**  
 > Both values are shown in the console output under **API Information**, or in the Quasarr web UI.
@@ -328,6 +328,6 @@ docker run -d \
 |------------------------|---------------------------------------------------------------------------------------|
 | `QUASARR_URL`          | Local URL of Quasarr (e.g., `http://192.168.0.1:8080`)                                |
 | `QUASARR_API_KEY`      | Your Quasarr API key (found in Quasarr web UI under "API Settings")                   |
-| `FLARESOLVERR_URL`     | Local URL of [flaresolverr-go](https://github.com/Rorqualx/flaresolverr-go)           |
+| `FLARESOLVERR_URL`     | Local URL of [flaresolverr-next](https://github.com/rix1337/flaresolverr-next)        |
 | `APIKEY_2CAPTCHA`      | [2Captcha](https://2captcha.com/?from=27506687) account API key                       |
 | `TZ`                   | Optional. Timezone for SponsorsHelper (e.g., `Europe/Berlin`)                           |

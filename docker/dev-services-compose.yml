@@ -17,9 +17,9 @@ services:
         max-file: "1"
     restart: unless-stopped
 
-  flaresolverr-go:
-    image: rorqualx/flaresolverr-go:latest
-    container_name: flaresolverr-go
+  flaresolverr-next:
+    image: ghcr.io/rix1337/flaresolverr-next:latest
+    container_name: flaresolverr-next
     environment:
       - TZ=Europe/Berlin
     ports:
@@ -47,7 +47,7 @@ services:
 #      - QUASARR_URL=http://192.168.0.1:8080
 #      - QUASARR_API_KEY=your_quasarr_api_key_here
 #      - APIKEY_2CAPTCHA=your_2captcha_api_key_here
-#      - FLARESOLVERR_URL=http://flaresolverr-go:8191/v1
+#      - FLARESOLVERR_URL=http://flaresolverr-next:8191/v1
 #    volumes:
 #      - ${CONFIG_VOLUMES}/sponsorshelper:/config
 #    restart: unless-stopped

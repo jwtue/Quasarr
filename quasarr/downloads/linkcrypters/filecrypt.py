@@ -21,7 +21,7 @@ from quasarr.providers.cloudflare import (
 from quasarr.providers.log import debug, info
 
 _FILECRYPT_TLDS = ("cc", "to", "co")
-_FLARESOLVERR_GO_URL = "https://github.com/Rorqualx/flaresolverr-go"
+_FLARESOLVERR_NEXT_URL = "https://github.com/rix1337/flaresolverr-next"
 _FILECRYPT_CIRCLE_CAPTCHA_URL = "https://filecrypt.cc/captcha/circle.php"
 
 
@@ -134,7 +134,7 @@ def _cookie_dict(cookies):
 def _flaresolverr_execute_js_get(shared_state, session, url, execute_js, wait=12):
     flaresolverr_url = shared_state.values["config"]("FlareSolverr").get("url")
     if not flaresolverr_url:
-        raise RuntimeError("FlareSolverr-Go is required for Filecrypt proof-of-work.")
+        raise RuntimeError("flaresolverr-next is required for Filecrypt proof-of-work.")
 
     last_error = None
 
@@ -162,7 +162,7 @@ def _flaresolverr_execute_js_get(shared_state, session, url, execute_js, wait=12
             last_error = message
             if "dns rebinding detected" in message.lower():
                 continue
-            raise RuntimeError(f"FlareSolverr-Go failed: {message}")
+            raise RuntimeError(f"flaresolverr-next failed: {message}")
 
         solution = result["solution"]
 
@@ -184,7 +184,7 @@ def _flaresolverr_execute_js_get(shared_state, session, url, execute_js, wait=12
             "execute_js_result": solution.get("executeJsResult"),
         }
 
-    raise RuntimeError(f"FlareSolverr-Go failed: {last_error}")
+    raise RuntimeError(f"flaresolverr-next failed: {last_error}")
 
 
 def _solve_filecrypt_pow_if_present(shared_state, session, output, headers):
@@ -192,7 +192,9 @@ def _solve_filecrypt_pow_if_present(shared_state, session, output, headers):
     if not _get_pow_captcha(soup):
         return output
 
-    info("Filecrypt proof-of-work detected. Solving with FlareSolverr-Go executeJs...")
+    info(
+        "Filecrypt proof-of-work detected. Solving with flaresolverr-next executeJs..."
+    )
 
     click_js = """
     const box = document.querySelector('#pow-captcha .pow-captcha__box');
@@ -219,8 +221,8 @@ def _solve_filecrypt_pow_if_present(shared_state, session, output, headers):
         execute_result = result.get("execute_js_result")
         if execute_result in (None, "", "null"):
             raise RuntimeError(
-                "Filecrypt proof-of-work requires FlareSolverr-Go executeJs support. "
-                f"Make sure you are using FlareSolverr-Go: {_FLARESOLVERR_GO_URL}"
+                "Filecrypt proof-of-work requires flaresolverr-next executeJs support. "
+                f"Make sure you are using flaresolverr-next: {_FLARESOLVERR_NEXT_URL}"
             )
 
         execute_result = str(execute_result)

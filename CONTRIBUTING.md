@@ -31,7 +31,7 @@ CONFIG_VOLUMES=/path/to/config docker-compose -f docker/dev-services-compose.yml
 Replace `/path/to/config` with your desired configuration location.
 The `CONFIG_VOLUMES` environment variable is **mandatory**.
 
-By default, only JDownloader and Flaresolverr are enabled. See next step how to emulate supported *arr services.
+By default, only JDownloader and flaresolverr-next are enabled. See next step how to emulate supported *arr services.
 
 **4. Validate your changes**
 

@@ -46,7 +46,7 @@ Develop from a source checkout; `uv tool install quasarr` is for end users only.
 - Setup: `uv sync --group dev` (add `--group build` only when build artifacts are needed)
 - Create a local `.env` from `.env.example`; set at least `INTERNAL_ADDRESS` (`EXTERNAL_ADDRESS`, `USER`, `PASS`, `AUTH`, and `TZ` are optional but commonly used locally). On first start Quasarr writes `Quasarr.conf` to store the config path.
 - Run from source: `uv run Quasarr.py`
-- Dev services (JDownloader + flaresolverr-go): `CONFIG_VOLUMES=/path/to/config docker compose -f docker/dev-services-compose.yml up` — `CONFIG_VOLUMES` is mandatory; legacy installations can use `docker-compose -f ...` instead
+- Dev services (JDownloader + flaresolverr-next): `CONFIG_VOLUMES=/path/to/config docker compose -f docker/dev-services-compose.yml up` — `CONFIG_VOLUMES` is mandatory; legacy installations can use `docker-compose -f ...` instead
 - Simulate Radarr/Sonarr/Lidarr/Magazarr against a running instance: `uv run cli_tester.py` (preferred over standing up a full *arr stack)
 - Unit tests: `uv run python -X utf8 -m unittest discover -s tests`
 - Lint: `uv run ruff check .`

@@ -262,9 +262,12 @@ def setup_arr_routes(app):
                 elif mode == "queue" or mode == "history":
                     if request.query.name and request.query.name == "delete":
                         package_id = request.query.value
-                        package_title = getattr(request.query, "title", None)
+                        package_title = getattr(request.query, "title", None) or None
                         deleted = delete_package(
-                            shared_state, package_id, package_title=package_title
+                            shared_state,
+                            package_id,
+                            package_title=package_title,
+                            missing_ok=True,
                         )
                         response = {"status": deleted, "nzo_ids": [package_id]}
                         if not deleted:
