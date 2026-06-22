@@ -28,7 +28,9 @@ def get_radarr_required_hostnames():
     from quasarr.search.sources import get_sources
 
     return [
-        source.initials for source in get_sources().values() if source.requires_radarr
+        source.initials
+        for source in get_sources().values()
+        if source.feed_requires_radarr
     ]
 
 
@@ -36,5 +38,7 @@ def get_sonarr_required_hostnames():
     from quasarr.search.sources import get_sources
 
     return [
-        source.initials for source in get_sources().values() if source.requires_sonarr
+        source.initials
+        for source in get_sources().values()
+        if source.feed_requires_sonarr
     ]

@@ -13,7 +13,7 @@ The shared-services layer consumed by every other subsystem: cross-process state
 - `myjd_api.py` — vendored, modified My.JDownloader client (MIT, third-party) — keep modifications minimal
 - `jd_cache.py` — `JDPackageCache`, valid for exactly one `get_packages()`/`delete_package()` call, never reused across requests
 - `imdb_metadata.py` / `xem_metadata.py` — cached metadata chains (IMDb 3-tier fallback; TheXEM season names)
-- `radarr_api.py` / `sonarr_api.py` — minimal clients cached in shared_state via `set_client`/`get_client`
+- `radarr_api.py` / `sonarr_api.py` — minimal clients cached in shared_state via `set_client`/`get_client`; IMDb→TMDB/TVDB resolution (`get_tmdb_id`/`get_tvdb_id`) plus library-feed seeds `get_wanted_imdb_ids` / `get_wanted_episodes` (wanted = missing + cutoff-unmet, missing first, capped at the passed `limit`, paging past filtered entries; the movie helper skips not-yet-released titles and the episode helper skips not-yet-aired ones). All return safe empties when the client is unconfigured.
 - `statistics.py` — DB-backed counters, constructed inline at call sites
 - `version.py` — `__version__`, the single source of version truth
 - `obfuscated.py` — obfuscated userscripts and captcha-service endpoint values; consumed only by `api/captcha`

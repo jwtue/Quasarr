@@ -2,6 +2,8 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
+from datetime import datetime, timezone
+
 import requests
 
 from quasarr.providers.log import error, trace, warn
@@ -68,6 +70,22 @@ class SonarrAPIClient:
                 return series
         return None
 
+    def wanted(self, kind, page=1, page_size=50):
+        """Return a wanted episodes page (``kind`` is ``missing`` or ``cutoff``);
+        records include the series."""
+        return (
+            self._get(
+                f"/wanted/{kind}",
+                params={
+                    "page": page,
+                    "pageSize": page_size,
+                    "includeSeries": "true",
+                    "monitored": "true",
+                },
+            )
+            or {}
+        )
+
 
 def get_tmdb_id(shared_state, imdb_id):
     """Return the tmdbId Sonarr resolves for the given IMDb ID, or None."""
@@ -109,3 +127,72 @@ def get_tvdb_id(shared_state, imdb_id):
     trace(f"Resolved IMDb ID '{imdb_id}' to TVDB ID '{tvdb_id}'")
 
     return tvdb_id
+
+
+# Cap on wanted pages walked per kind so a backlog of unaired entries cannot
+# turn one feed run into unbounded Sonarr paging.
+_WANTED_MAX_PAGES = 5
+
+
+def _has_aired(record, now):
+    """True only when the episode has a known air date in the past.
+
+    Unaired or undated episodes have no release to search for yet, so they are
+    excluded from the feed seed (the show equivalent of skipping announced
+    movies). cutoff-unmet entries can include not-yet-aired episodes, so the
+    check applies to every wanted record.
+    """
+    air = record.get("airDateUtc")
+    if not air:
+        return False
+    try:
+        return datetime.fromisoformat(air.replace("Z", "+00:00")) <= now
+    except ValueError:
+        return False
+
+
+def get_wanted_episodes(shared_state, limit=50):
+    """Return aired monitored episodes Sonarr wants as ``[{imdb_id, season,
+    episode}]``.
+
+    Covers both missing episodes (no file) and cutoff-unmet ones (present but
+    below the quality cutoff), missing first, capped at ``limit``. Episodes that
+    have not aired yet are skipped, and pages are walked (bounded by
+    ``_WANTED_MAX_PAGES``) so a backlog of unaired entries still yields aired
+    ones. Empty when Sonarr is not configured or the request fails. Used to seed
+    a show feed for sources that need a concrete season+episode per request.
+    """
+    client = get_client(shared_state)
+    if client is None:
+        return []
+
+    now = datetime.now(timezone.utc)
+    episodes = []
+    seen = set()
+    for kind in ("missing", "cutoff"):
+        for page in range(1, _WANTED_MAX_PAGES + 1):
+            if len(episodes) >= limit:
+                return episodes
+            records = client.wanted(kind, page=page, page_size=limit).get("records", [])
+            if not records:
+                break  # no more pages for this kind
+            for record in records:
+                if not _has_aired(record, now):
+                    continue
+                series = record.get("series") or {}
+                imdb_id = series.get("imdbId")
+                season = record.get("seasonNumber")
+                episode = record.get("episodeNumber")
+                if not imdb_id or season is None or episode is None:
+                    continue
+                key = (imdb_id, season, episode)
+                if key in seen:
+                    continue
+                seen.add(key)
+                episodes.append(
+                    {"imdb_id": imdb_id, "season": season, "episode": episode}
+                )
+                if len(episodes) >= limit:
+                    return episodes
+
+    return episodes

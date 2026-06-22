@@ -34,11 +34,11 @@ class AbstractSearchSource(ABC):
         return False
 
     @property
-    def requires_radarr(self) -> bool:
+    def feed_requires_radarr(self) -> bool:
         return False
 
     @property
-    def requires_sonarr(self) -> bool:
+    def feed_requires_sonarr(self) -> bool:
         return False
 
     @abstractmethod
