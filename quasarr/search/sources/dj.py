@@ -35,6 +35,7 @@ class Source(AbstractSearchSource):
     requires_account = True
     supports_imdb = True
     supports_phrase = False
+    supports_date_numbering = False
     supported_categories = [SEARCH_CAT_SHOWS]
     requires_login = True
 

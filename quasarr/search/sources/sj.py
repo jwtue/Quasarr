@@ -21,6 +21,7 @@ from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostnam
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import debug, info, trace
 from quasarr.providers.utils import (
+    date_numbering_title_search_strings,
     generate_download_link,
     is_imdb_id,
     is_valid_release,
@@ -36,6 +37,7 @@ class Source(AbstractSearchSource):
     requires_account = True
     supports_imdb = True
     supports_phrase = False
+    supports_date_numbering = True
     supported_categories = [SEARCH_CAT_SHOWS, SEARCH_CAT_SHOWS_ANIME]
     requires_login = True
 
@@ -132,6 +134,7 @@ class Source(AbstractSearchSource):
         search_string: str = "",
         season: int = None,
         episode: int = None,
+        episode_date=None,
     ) -> list[SearchRelease]:
         releases = []
 
@@ -146,38 +149,49 @@ class Source(AbstractSearchSource):
         if not localized_title:
             info(f"no localized title for IMDb {imdb_id}")
             return releases
+        match_search_string = localized_title if episode_date else search_string
+        query_strings = (
+            date_numbering_title_search_strings(localized_title)
+            if episode_date
+            else [localized_title]
+        )
 
         headers = {"User-Agent": shared_state.values["user_agent"]}
         search_url = f"https://{sj_host}/serie/search"
-        params = {"q": localized_title}
-
-        try:
-            r = requests.get(
-                search_url,
-                headers=headers,
-                params=params,
-                timeout=SEARCH_REQUEST_TIMEOUT_SECONDS,
-            )
-            r.raise_for_status()
-            soup = BeautifulSoup(r.content, "html.parser")
-            results = soup.find_all("a", href=re.compile(r"^/serie/"))
-        except Exception as e:
-            info(f"search load error: {e}")
-            mark_hostname_issue(
-                self.initials, "search", str(e) if "e" in dir() else "Error occurred"
-            )
-            return releases
+        results = []
+        for query_string in query_strings:
+            try:
+                r = requests.get(
+                    search_url,
+                    headers=headers,
+                    params={"q": query_string},
+                    timeout=SEARCH_REQUEST_TIMEOUT_SECONDS,
+                )
+                r.raise_for_status()
+                soup = BeautifulSoup(r.content, "html.parser")
+                results.extend(
+                    (result, query_string)
+                    for result in soup.find_all("a", href=re.compile(r"^/serie/"))
+                )
+            except Exception as e:
+                info(f"search load error: {e}")
+                mark_hostname_issue(
+                    self.initials,
+                    "search",
+                    str(e) if "e" in dir() else "Error occurred",
+                )
 
         one_hour_ago = (datetime.now() - timedelta(hours=1)).strftime(
             "%Y-%m-%d %H:%M:%S"
         )
-        sanitized_search_string = sanitize_string(localized_title)
+        seen_series_urls = set()
 
-        for result in results:
+        for result, query_string in results:
             try:
                 result_title = result.get_text(strip=True)
 
                 sanitized_title = sanitize_string(result_title)
+                sanitized_search_string = sanitize_string(query_string)
 
                 if not re.search(
                     rf"\b{re.escape(sanitized_search_string)}\b", sanitized_title
@@ -192,6 +206,9 @@ class Source(AbstractSearchSource):
                 )
 
                 series_url = f"https://{sj_host}{result['href']}"
+                if series_url in seen_series_urls:
+                    continue
+                seen_series_urls.add(series_url)
 
                 r = requests.get(
                     series_url,
@@ -222,7 +239,12 @@ class Source(AbstractSearchSource):
                             continue
 
                         if not is_valid_release(
-                            title, search_category, search_string, season, episode
+                            title,
+                            search_category,
+                            match_search_string,
+                            season,
+                            episode,
+                            episode_date,
                         ):
                             continue
 

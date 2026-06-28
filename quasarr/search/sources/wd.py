@@ -29,6 +29,7 @@ from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, error, info, warn
 from quasarr.providers.utils import (
     convert_to_mb,
+    date_numbering_title_search_strings,
     generate_download_link,
     get_base_search_category_id,
     is_flaresolverr_available,
@@ -46,6 +47,7 @@ class Source(AbstractSearchSource):
     requires_flaresolverr = True
     supports_imdb = True
     supports_phrase = True
+    supports_date_numbering = True
     supported_categories = [
         SEARCH_CAT_BOOKS,
         SEARCH_CAT_MOVIES,
@@ -132,6 +134,7 @@ class Source(AbstractSearchSource):
         search_string: str = "",
         season: int = None,
         episode: int = None,
+        episode_date=None,
     ) -> list[SearchRelease]:
         releases = []
         wd = shared_state.values["config"]("Hostnames").get(self.initials)
@@ -144,11 +147,17 @@ class Source(AbstractSearchSource):
                 info(f"Could not extract title from IMDb-ID {imdb_id}")
                 return releases
             search_string = html.unescape(search_string)
-            if not season:
+            if not season and episode_date is None:
                 if year := get_year(imdb_id):
                     search_string += f" {year}"
 
-        q = quote_plus(search_string)
+        match_search_string = search_string
+        query_string = (
+            date_numbering_title_search_strings(search_string)[0]
+            if episode_date
+            else search_string
+        )
+        q = quote_plus(query_string)
         url = f"https://{wd}/search?q={q}"
         headers = {"User-Agent": shared_state.values["user_agent"]}
 
@@ -193,9 +202,10 @@ class Source(AbstractSearchSource):
                 wd,
                 password,
                 search_category=search_category,
-                search_string=search_string,
+                search_string=match_search_string,
                 season=season,
                 episode=episode,
+                episode_date=episode_date,
                 imdb_id=imdb_id,
             )
         except Exception as e:
@@ -220,6 +230,7 @@ class Source(AbstractSearchSource):
         search_string=None,
         season=None,
         episode=None,
+        episode_date=None,
         imdb_id=None,
     ):
         """
@@ -261,7 +272,12 @@ class Source(AbstractSearchSource):
                 # search context contains non-video releases (ebooks, games, etc.)
                 if is_search:
                     if not is_valid_release(
-                        title, search_category, search_string, season, episode
+                        title,
+                        search_category,
+                        search_string,
+                        season,
+                        episode,
+                        episode_date,
                     ):
                         continue
 

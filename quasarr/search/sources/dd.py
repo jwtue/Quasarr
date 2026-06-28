@@ -23,6 +23,7 @@ from quasarr.providers.sessions.dd import (
 )
 from quasarr.providers.utils import (
     convert_to_mb,
+    date_numbering_title_search_strings,
     generate_download_link,
     is_imdb_id,
     is_valid_release,
@@ -38,6 +39,7 @@ class Source(AbstractSearchSource):
     invite_only = True
     supports_imdb = True
     supports_phrase = False
+    supports_date_numbering = True
     supported_categories = [SEARCH_CAT_MOVIES, SEARCH_CAT_SHOWS, SEARCH_CAT_SHOWS_ANIME]
     requires_login = True
 
@@ -54,6 +56,7 @@ class Source(AbstractSearchSource):
         search_string: str = "",
         season: int = None,
         episode: int = None,
+        episode_date=None,
     ) -> list[SearchRelease]:
         releases = []
         dd = shared_state.values["config"]("Hostnames").get(self.initials)
@@ -76,13 +79,20 @@ class Source(AbstractSearchSource):
                 info(f"Could not extract title from IMDb-ID {imdb_id}")
                 return releases
             search_string = html.unescape(search_string)
-            if season:
-                search_string += f" S{int(season):02d}"
-                if episode:
-                    search_string += f"E{int(episode):02d}"
-            else:
-                if year := get_year(imdb_id):
+            if episode_date is None:
+                if season:
+                    search_string += f" S{int(season):02d}"
+                    if episode:
+                        search_string += f"E{int(episode):02d}"
+                elif year := get_year(imdb_id):
                     search_string += f" {year}"
+
+        match_search_string = search_string
+        search_strings = (
+            [date_numbering_title_search_strings(search_string)[0]]
+            if episode_date
+            else [search_string]
+        )
 
         if not search_string:
             search_type = "feed"
@@ -109,14 +119,29 @@ class Source(AbstractSearchSource):
 
         try:
             release_list = []
-            for page in range(0, 100, 20):
-                url = f"https://{dd}/index/search/keyword/{search_string}/qualities/{','.join(qualities)}/from/{page}/search"
+            release_by_title = {}
+            max_offset = 2000 if episode_date else 100
+            for query in search_strings:
+                for page in range(0, max_offset, 20):
+                    url = f"https://{dd}/index/search/keyword/{query}/qualities/{','.join(qualities)}/from/{page}/search"
 
-                r = dd_session.get(url, headers=headers, timeout=timeout)
-                r.raise_for_status()
-                releases_on_page = r.json()
-                if releases_on_page:
-                    release_list.extend(releases_on_page)
+                    r = dd_session.get(url, headers=headers, timeout=timeout)
+                    r.raise_for_status()
+                    releases_on_page = r.json()
+                    if not releases_on_page:
+                        if episode_date:
+                            break
+                        continue
+                    if episode_date is None:
+                        release_list.extend(releases_on_page)
+                    else:
+                        for release in releases_on_page:
+                            title = release.get("release")
+                            if title:
+                                release_by_title[title] = release
+
+            if episode_date is not None:
+                release_list = list(release_by_title.values())
 
             for release in release_list:
                 try:
@@ -130,7 +155,12 @@ class Source(AbstractSearchSource):
                         title = release.get("release")
 
                         if not is_valid_release(
-                            title, search_category, search_string, season, episode
+                            title,
+                            search_category,
+                            match_search_string,
+                            season,
+                            episode,
+                            episode_date,
                         ):
                             continue
 

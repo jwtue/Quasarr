@@ -1047,12 +1047,198 @@ def match_in_title(title: str, season: int = None, episode: int = None) -> bool:
     return False
 
 
+_DATE_NUMBERING_IGNORED_ARTICLES = {
+    "a",
+    "an",
+    "and",
+    "das",
+    "der",
+    "die",
+    "the",
+}
+_DATE_NUMBERING_SCHEDULE_WORDS = {
+    "friday",
+    "monday",
+    "night",
+    "saturday",
+    "sunday",
+    "thursday",
+    "tuesday",
+    "wednesday",
+}
+_DATE_NUMBERING_IGNORED_TITLE_WORDS = (
+    _DATE_NUMBERING_IGNORED_ARTICLES | _DATE_NUMBERING_SCHEDULE_WORDS
+)
+
+
+def parse_episode_date(season, episode):
+    """Return a validated date for Sonarr's year + MM/DD numbering shape."""
+    if not re.fullmatch(r"\d{4}", str(season or "")):
+        return None
+
+    parts = str(episode or "").split("/")
+    if len(parts) != 2:
+        return None
+
+    try:
+        return date(int(season), int(parts[0]), int(parts[1]))
+    except (TypeError, ValueError):
+        return None
+
+
+def _date_numbering_date_pattern(episode_date):
+    return re.compile(
+        rf"(?<!\d){episode_date:%Y}[\s.-]+{episode_date:%m}[\s.-]+"
+        rf"{episode_date:%d}(?!\d)"
+    )
+
+
+def date_numbering_title_tokens(
+    value, episode_date=None, preserve_schedule_words=False
+):
+    value = str(value or "")
+    if episode_date is not None:
+        value = _date_numbering_date_pattern(episode_date).sub(" ", value)
+
+    normalized = replace_umlauts(html.unescape(value)).lower()
+    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+    tokens = normalized.split()
+    ignored_words = (
+        _DATE_NUMBERING_IGNORED_ARTICLES
+        if preserve_schedule_words
+        else _DATE_NUMBERING_IGNORED_TITLE_WORDS
+    )
+    meaningful_tokens = [token for token in tokens if token not in ignored_words]
+    if meaningful_tokens:
+        return meaningful_tokens
+
+    return [token for token in tokens if token not in _DATE_NUMBERING_IGNORED_ARTICLES]
+
+
+def date_numbering_title_matches(title, search_string, episode_date=None):
+    search_tokens = date_numbering_title_tokens(search_string, episode_date)
+    if not search_tokens:
+        return False
+    preserve_schedule_words = set(search_tokens).issubset(
+        _DATE_NUMBERING_SCHEDULE_WORDS
+    )
+    title_tokens = date_numbering_title_tokens(
+        title,
+        episode_date,
+        preserve_schedule_words=preserve_schedule_words,
+    )
+    return all(
+        title_tokens.count(token) >= search_tokens.count(token)
+        for token in set(search_tokens)
+    )
+
+
+def date_numbering_release_matches(title, search_string, episode_date):
+    if episode_date is None:
+        return False
+
+    date_pattern = _date_numbering_date_pattern(episode_date)
+    if not date_pattern.search(str(title or "")):
+        return False
+    return bool(
+        is_imdb_id(search_string)
+        or date_numbering_title_matches(title, search_string, episode_date)
+    )
+
+
+def _date_numbering_case_variant(value):
+    words = str(value or "").split()
+    normalized = []
+    changed = False
+    for word in words:
+        if any(char.islower() for char in word) and any(
+            char.isupper() for char in word[1:]
+        ):
+            word = word[:1] + word[1:].lower()
+            changed = True
+        normalized.append(word)
+    return " ".join(normalized) if changed else ""
+
+
+def date_numbering_title_search_strings(search_string):
+    """Build generic title variants for broad date-numbered source searches."""
+    search_string = " ".join(str(search_string or "").split())
+    if not search_string:
+        return [search_string]
+
+    title_variants = [search_string]
+    words = search_string.split()
+    if re.fullmatch(r"[A-Z0-9]{2,5}", words[0]):
+        title_variants.insert(0, words[0])
+
+    compact_words = [
+        word
+        for word in words
+        if re.sub(r"[^a-z0-9]+", "", word.lower()) not in _DATE_NUMBERING_SCHEDULE_WORDS
+    ]
+    if len(compact_words) >= 2 and compact_words != words:
+        title_variants.append(" ".join(compact_words))
+
+    for value in list(title_variants):
+        case_variant = _date_numbering_case_variant(value)
+        if case_variant and case_variant not in title_variants:
+            title_variants.append(case_variant)
+
+    return title_variants
+
+
+def date_numbering_search_strings(search_string, episode_date):
+    """Build generic title/date variants without series-specific aliases."""
+    if episode_date is None:
+        return [" ".join(str(search_string or "").split())]
+
+    title_variants = date_numbering_title_search_strings(search_string)
+
+    search_strings = list(title_variants)
+    for candidate in (
+        episode_date,
+        episode_date - timedelta(days=1),
+        episode_date + timedelta(days=1),
+    ):
+        for title_variant in title_variants:
+            for date_variant in (
+                f"{candidate:%Y %m %d}",
+                f"{candidate:%Y-%m-%d}",
+                f"{candidate:%Y.%m.%d}",
+            ):
+                value = f"{title_variant} {date_variant}"
+                if value not in search_strings:
+                    search_strings.append(value)
+
+    return search_strings
+
+
+def canonicalize_date_numbered_title(title, search_string, episode_date):
+    if is_imdb_id(search_string) or not date_numbering_release_matches(
+        title, search_string, episode_date
+    ):
+        return title
+
+    date_match = re.search(
+        rf"(?<!\d){episode_date:%Y}[\s.-]+{episode_date:%m}[\s.-]+"
+        rf"{episode_date:%d}(?!\d)",
+        str(title or ""),
+    )
+    if not date_match:
+        return title
+
+    canonical_prefix = re.sub(r"[^\w]+", ".", str(search_string)).strip(".")
+    suffix = str(title)[date_match.start() :].lstrip(" .-_")
+    return f"{canonical_prefix}.{suffix}" if canonical_prefix and suffix else title
+
+
 def is_valid_release(
     title: str,
     search_category: int,
     search_string: str,
     season: int = None,
     episode: int = None,
+    episode_date: date = None,
 ) -> bool:
     """
     Return True if the given release title is valid for the given search parameters.
@@ -1061,6 +1247,7 @@ def is_valid_release(
     - search_string: the original search phrase (could be an IMDb id or plain text)
     - season: desired season number (or None)
     - episode: desired episode number (or None)
+    - episode_date: validated date for a date-numbered TV episode (or None)
     """
     try:
         is_movie_search = search_category // 1000 * 1000 == SEARCH_CAT_MOVIES
@@ -1069,11 +1256,17 @@ def is_valid_release(
         is_music_search = search_category // 1000 * 1000 == SEARCH_CAT_MUSIC
         is_xxx_search = search_category // 1000 * 1000 == SEARCH_CAT_XXX
 
-        # if search string is NOT an imdb id check search_string_in_sanitized_title - if not match, it is not valid
+        # if search string is NOT an imdb id, require a title match
         if not is_docs_search and not is_imdb_id(search_string):
-            if not search_string_in_sanitized_title(search_string, title):
+            title_matches = (
+                date_numbering_title_matches(title, search_string, episode_date)
+                if is_tv_search and episode_date is not None
+                else search_string_in_sanitized_title(search_string, title)
+            )
+            if not title_matches:
                 trace(
-                    "Skipping {title!r} as it doesn't match sanitized search string: {search_string!r}",
+                    "Skipping {title!r} as it doesn't match sanitized "
+                    "search string: {search_string!r}",
                     title=title,
                     search_string=search_string,
                 )
@@ -1092,6 +1285,18 @@ def is_valid_release(
 
         # if it's a TV show search, don't allow any movies (check for season or episode tags in the title)
         if is_tv_search:
+            if episode_date is not None:
+                if not date_numbering_release_matches(
+                    title, search_string, episode_date
+                ):
+                    trace(
+                        "Skipping {title!r} as it doesn't match date {episode_date}",
+                        title=title,
+                        episode_date=episode_date,
+                    )
+                    return False
+                return True
+
             # must have some S/E tag present
             if not SEASON_EP_REGEX.search(title):
                 trace(
@@ -1104,7 +1309,8 @@ def is_valid_release(
             if season is not None or episode is not None:
                 if not match_in_title(title, season, episode):
                     trace(
-                        "Skipping {title!r} as it doesn't match season {season} and episode {episode}",
+                        "Skipping {title!r} as it doesn't match season "
+                        "{season} and episode {episode}",
                         title=title,
                         season=season,
                         episode=episode,

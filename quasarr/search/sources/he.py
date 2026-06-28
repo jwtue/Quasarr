@@ -37,6 +37,7 @@ class Source(AbstractSearchSource):
     language = "en"
     supports_imdb = True
     supports_phrase = False
+    supports_date_numbering = True
     supported_categories = [SEARCH_CAT_MOVIES, SEARCH_CAT_SHOWS, SEARCH_CAT_SHOWS_ANIME]
 
     def feed(
@@ -52,6 +53,7 @@ class Source(AbstractSearchSource):
         search_string: str = "",
         season: int = None,
         episode: int = None,
+        episode_date=None,
     ) -> list[SearchRelease]:
         releases = []
         host = shared_state.values["config"]("Hostnames").get(self.initials)
@@ -67,6 +69,7 @@ class Source(AbstractSearchSource):
             return releases
 
         source_search = ""
+        match_search_string = search_string
         if search_string != "":
             imdb_id = is_imdb_id(search_string)
             if imdb_id:
@@ -74,7 +77,7 @@ class Source(AbstractSearchSource):
                 if not local_title:
                     info(f"No title for IMDb {imdb_id}")
                     return releases
-                if not season:
+                if not season and episode_date is None:
                     year = get_year(imdb_id)
                     if year:
                         local_title += f" {year}"
@@ -82,6 +85,8 @@ class Source(AbstractSearchSource):
             else:
                 return releases
             source_search = unescape(source_search)
+            if episode_date is not None:
+                match_search_string = source_search
         else:
             imdb_id = None
 
@@ -92,7 +97,9 @@ class Source(AbstractSearchSource):
             search_type = "search"
             timeout = SEARCH_REQUEST_TIMEOUT_SECONDS
 
-        if season:
+        if episode_date is not None:
+            source_search += f" {episode_date:%Y %m %d}"
+        elif season:
             source_search += f" S{int(season):02d}"
 
             if episode:
@@ -142,7 +149,12 @@ class Source(AbstractSearchSource):
                 title = head_split[0].strip()
 
                 if not is_valid_release(
-                    title, search_category, search_string, season, episode
+                    title,
+                    search_category,
+                    match_search_string,
+                    season,
+                    episode,
+                    episode_date,
                 ):
                     trace("invalid release {}", title)
                     continue

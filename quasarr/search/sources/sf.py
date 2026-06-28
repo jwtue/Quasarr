@@ -37,6 +37,7 @@ class Source(AbstractSearchSource):
     language = "de"
     supports_imdb = True
     supports_phrase = False
+    supports_date_numbering = False
     supported_categories = [SEARCH_CAT_SHOWS, SEARCH_CAT_SHOWS_ANIME]
 
     def feed(

@@ -35,6 +35,8 @@ Do not propose or implement broad new abstractions, adjacent product ideas, or c
 
 Keep changes aligned with the existing `quasarr/` package layout, prefer `uv` for local commands, and run the documented checks before submitting work. Keep commit subjects short and imperative, keep pull requests focused, and avoid bundling unrelated edits.
 
+Work on the `dev` branch for repository changes unless the user explicitly requests another branch.
+
 Do not change more code than necessary. Refactors should be proposed and explicitly requested, not performed opportunistically. Keep commit deltas low and avoid creating refactor overhead such as rewriting unrelated tests.
 
 Unit tests should usually change only when the intended behavior in the covered area changed, or when the existing test is incorrect. Do not rewrite tests just because nearby code changed shape.
@@ -61,6 +63,10 @@ Match the dominant history pattern: a single-line, imperative, capitalized subje
 Add a body only when the subject genuinely cannot carry the change: list only the defining changes in short concrete bullets, and explain why only when it is not obvious from the diff. The PR description, not the commit body, carries the user-visible summary and test plan.
 
 Pull requests must describe the user-visible change, call out any config or hostname impact, and avoid mixing unrelated cleanup with functional work. Include proof of behavior (screenshots, logs, or a brief reproduction) for UI or integration changes. Coordinate on Discord before starting large new features.
+
+After addressing PR review feedback, resolve the corresponding GitHub review parent thread and verify that it reads back as resolved so addressed comments no longer remain visible as unresolved.
+
+Before requesting automated PR review, inspect changed loops and branches as state transitions, especially where parsing or filtering can erase raw source state or where nested loops share timeout budgets. Verify outer-loop fairness as well as inner-loop stopping behavior; do not truncate fallback-candidate lists without evidence that later candidates are redundant. Trace emitted URLs, selectors, and identifiers into their downstream consumers so missing specificity cannot widen the consumer's scope. Read test assertions as behavior contracts rather than trusting test names. Add paired regression coverage for both the new behavior and the unchanged legacy path.
 
 ## Skill Execution
 
