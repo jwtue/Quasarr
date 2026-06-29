@@ -44,6 +44,7 @@ def get_search_results(
         get_search_behavior_category,
         get_search_cache_owner_category,
         get_search_capability_category,
+        parse_episode_date,
         release_matches_search_category,
     )
 
@@ -54,6 +55,11 @@ def get_search_results(
 
     if imdb_id:
         get_imdb_metadata(imdb_id)
+
+    episode_date = parse_episode_date(season, episode)
+    if episode_date:
+        season = None
+        episode = None
 
     # Determine search category if not provided
     if not search_category:
@@ -106,10 +112,11 @@ def get_search_results(
             stype += f" <g>S{season}</g>"
         if episode:
             stype += f"{'' if season else ' '}<e>E{episode}</e>"
+        if episode_date:
+            stype += f" <g>{episode_date:%Y}</g>-<e>{episode_date:%m}</e>-<y>{episode_date:%d}</y>"
 
         if base_search_category in [SEARCH_CAT_MOVIES, SEARCH_CAT_SHOWS]:
             args = (shared_state, start_time, behavior_search_category)
-            kwargs = {"search_string": imdb_id, "season": season, "episode": episode}
             for source in sources.values():
                 source_logger = get_source_logger(source.initials)
 
@@ -136,6 +143,19 @@ def get_search_results(
                 if episode and not season and not source.supports_absolute_numbering:
                     source_logger.trace("Search with absolute EP number unsupported")
                     continue
+
+                kwargs = {
+                    "search_string": imdb_id,
+                    "season": season,
+                    "episode": episode,
+                }
+
+                if episode_date:
+                    if not source.supports_date_numbering:
+                        source_logger.trace("Search with date unsupported")
+                        continue
+
+                    kwargs["episode_date"] = episode_date
 
                 search_executor.add(
                     source,

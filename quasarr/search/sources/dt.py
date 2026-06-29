@@ -41,6 +41,7 @@ class Source(AbstractSearchSource):
     language = "en"
     supports_imdb = True
     supports_phrase = True
+    supports_date_numbering = False
     supported_categories = [
         SEARCH_CAT_MOVIES,
         SEARCH_CAT_SHOWS,

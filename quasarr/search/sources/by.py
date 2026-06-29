@@ -6,7 +6,7 @@ import html
 import re
 import time
 from datetime import datetime
-from urllib.parse import quote_plus
+from urllib.parse import parse_qs, quote_plus, urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -27,6 +27,7 @@ from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostnam
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, error, info, warn
 from quasarr.providers.utils import (
+    date_numbering_title_search_strings,
     generate_download_link,
     get_base_search_category_id,
     is_imdb_id,
@@ -42,6 +43,7 @@ class Source(AbstractSearchSource):
     language = "de"
     supports_imdb = True
     supports_phrase = True
+    supports_date_numbering = True
     supported_categories = [
         SEARCH_CAT_BOOKS,
         SEARCH_CAT_MOVIES,
@@ -103,6 +105,7 @@ class Source(AbstractSearchSource):
         search_string: str = "",
         season: int = None,
         episode: int = None,
+        episode_date=None,
     ) -> list[SearchRelease]:
         by = shared_state.values["config"]("Hostnames").get(self.initials)
         password = by
@@ -114,33 +117,67 @@ class Source(AbstractSearchSource):
                 info(f"Could not extract title from IMDb-ID {imdb_id}")
                 return []
             search_string = html.unescape(title)
-            if not season:
+            if not season and episode_date is None:
                 if year := get_year(imdb_id):
                     search_string += f" {year}"
 
         base_url = f"https://{by}"
-        q = quote_plus(search_string)
-        url = f"{base_url}/?q={q}"
         headers = {"User-Agent": shared_state.values["user_agent"]}
+        match_search_string = search_string
+        search_strings = (
+            [date_numbering_title_search_strings(search_string)[0]]
+            if episode_date
+            else [search_string]
+        )
         try:
-            r = requests.get(
-                url,
-                headers=headers,
-                timeout=SEARCH_REQUEST_TIMEOUT_SECONDS,
-            )
-            r.raise_for_status()
-            soup = BeautifulSoup(r.content, "html.parser")
-            releases = self._parse_posts(
-                soup,
-                shared_state,
-                base_url,
-                password,
-                is_search=True,
-                search_category=search_category,
-                search_string=search_string,
-                season=season,
-                episode=episode,
-            )
+            releases = []
+            seen_links = set()
+            for query in search_strings:
+                pending = [f"{base_url}/?q={quote_plus(query)}"]
+                visited = set()
+                while pending and len(visited) < 30:
+                    url = pending.pop(0)
+                    if url in visited:
+                        continue
+                    visited.add(url)
+                    r = requests.get(
+                        url,
+                        headers=headers,
+                        timeout=SEARCH_REQUEST_TIMEOUT_SECONDS,
+                    )
+                    r.raise_for_status()
+                    soup = BeautifulSoup(r.content, "html.parser")
+                    page_releases = self._parse_posts(
+                        soup,
+                        shared_state,
+                        base_url,
+                        password,
+                        is_search=True,
+                        search_category=search_category,
+                        search_string=match_search_string,
+                        season=season,
+                        episode=episode,
+                        episode_date=episode_date,
+                    )
+                    if episode_date is None:
+                        releases.extend(page_releases)
+                    else:
+                        for release in page_releases:
+                            source = release["details"]["source"]
+                            if source not in seen_links:
+                                seen_links.add(source)
+                                releases.append(release)
+                    if episode_date is None:
+                        continue
+                    for anchor in soup.find_all("a", href=True):
+                        page_url = urljoin(base_url, html.unescape(anchor["href"]))
+                        parsed = urlparse(page_url)
+                        if parsed.netloc != by:
+                            continue
+                        if parse_qs(parsed.query).get("q") != [query]:
+                            continue
+                        if page_url not in visited and page_url not in pending:
+                            pending.append(page_url)
         except Exception as e:
             error(f"Error loading search: {e}")
             mark_hostname_issue(
@@ -164,6 +201,7 @@ class Source(AbstractSearchSource):
         search_string=None,
         season=None,
         episode=None,
+        episode_date=None,
     ):
         releases = []
 
@@ -281,7 +319,12 @@ class Source(AbstractSearchSource):
                             continue
 
                     if not is_valid_release(
-                        title, search_category, search_string, season, episode
+                        title,
+                        search_category,
+                        search_string,
+                        season,
+                        episode,
+                        episode_date,
                     ):
                         continue
                     if XXX_REGEX.search(title) and "xxx" not in search_string.lower():

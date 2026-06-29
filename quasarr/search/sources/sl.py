@@ -29,6 +29,7 @@ from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import debug, info, warn
 from quasarr.providers.utils import (
     convert_to_mb,
+    date_numbering_title_search_strings,
     generate_download_link,
     get_base_search_category_id,
     is_imdb_id,
@@ -45,6 +46,7 @@ class Source(AbstractSearchSource):
     requires_flaresolverr = True
     supports_imdb = True
     supports_phrase = True
+    supports_date_numbering = True
     supported_categories = [
         SEARCH_CAT_BOOKS,
         SEARCH_CAT_MOVIES,
@@ -177,6 +179,7 @@ class Source(AbstractSearchSource):
         search_string: str = "",
         season: int = None,
         episode: int = None,
+        episode_date=None,
     ) -> list[SearchRelease]:
         releases = []
 
@@ -207,7 +210,13 @@ class Source(AbstractSearchSource):
                     return releases
 
             # Build the list of URLs to search. For tv-shows also search the "foreign" section.
-            q = quote_plus(search_string)
+            match_search_string = search_string
+            query_string = (
+                date_numbering_title_search_strings(search_string)[0]
+                if episode_date
+                else search_string
+            )
+            q = quote_plus(query_string)
             urls = [f"https://{sl}/{feed_type}/?s={q}"]
             if feed_type == "tv-shows":
                 urls.append(f"https://{sl}/foreign/?s={q}")
@@ -271,7 +280,12 @@ class Source(AbstractSearchSource):
                             title = a.get_text(strip=True)
 
                             if not is_valid_release(
-                                title, search_category, search_string, season, episode
+                                title,
+                                search_category,
+                                match_search_string,
+                                season,
+                                episode,
+                                episode_date,
                             ):
                                 continue
 

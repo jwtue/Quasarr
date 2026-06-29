@@ -144,10 +144,7 @@ def _posts_matching_requested_fragment(posts, url):
         return posts
 
     normalized_fragment = _normalize_post_fragment(fragment)
-    matched_posts = [
-        post for post in posts if _post_matches_fragment(post, normalized_fragment)
-    ]
-    return matched_posts or posts
+    return [post for post in posts if _post_matches_fragment(post, normalized_fragment)]
 
 
 def _post_matches_fragment(post, normalized_fragment):

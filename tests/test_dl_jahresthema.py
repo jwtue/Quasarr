@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import unittest
-from datetime import datetime
+from datetime import date, datetime
 from unittest.mock import patch
 
 from bs4 import BeautifulSoup
@@ -12,10 +12,12 @@ from quasarr.search.sources.dl import (
     Source as SearchSource,
 )
 from quasarr.search.sources.dl import (
+    _date_release_from_thread,
     _expand_jahresthema_thread_releases,
     _is_current_year_jahresthema_thread,
     _post_contains_supported_download,
     _release_from_jahresthema_post,
+    _should_check_thread_for_date_release,
 )
 
 
@@ -45,6 +47,219 @@ class FakeSharedState:
 
 
 class DlJahresthemaSearchTests(unittest.TestCase):
+    def test_date_thread_candidate_uses_search_tokens_without_release_group_lock(self):
+        self.assertTrue(
+            _should_check_thread_for_date_release(
+                "Sample Show 2026 Collection",
+                "Sample Show",
+                date(2026, 6, 19),
+            )
+        )
+
+    def test_date_thread_candidate_rejects_unrelated_series(self):
+        self.assertFalse(
+            _should_check_thread_for_date_release(
+                "Other Show 2026 Collection",
+                "Sample Show",
+                date(2026, 6, 19),
+            )
+        )
+
+    def test_date_release_from_thread_skips_metadata_only_matching_post(self):
+        html = """
+        <article class="message--post" id="post-1">
+          <div class="bbWrapper">
+            <p>Title: Sample.Show.2026.06.19.1080p.WEB.h264-GRP</p>
+            <p>Metadata only.</p>
+          </div>
+        </article>
+        <article class="message--post" id="post-2">
+          <div class="bbWrapper">
+            <p>Title: Sample.Show.2026.06.19.1080p.WEB.h264-GRP</p>
+            <p>https://ddl.invalid/example</p>
+          </div>
+        </article>
+        """
+
+        with patch(
+            "quasarr.search.sources.dl._fetch_thread_page",
+            return_value=FakeResponse(html, "https://www.source.invalid/thread.1/"),
+        ):
+            release = _date_release_from_thread(
+                FakeSharedState(),
+                "https://www.source.invalid/thread.1/",
+                "Sample Show",
+                date(2026, 6, 19),
+            )
+
+        self.assertEqual(
+            "https://www.source.invalid/thread.1/#post-2",
+            release["source"],
+        )
+
+    def test_date_release_from_thread_rejects_match_without_download(self):
+        html = """
+        <article class="message--post" id="post-1">
+          <div class="bbWrapper">
+            <p>Title: Sample.Show.2026.06.19.1080p.WEB.h264-GRP</p>
+            <p>Metadata only.</p>
+          </div>
+        </article>
+        """
+
+        with patch(
+            "quasarr.search.sources.dl._fetch_thread_page",
+            return_value=FakeResponse(html, "https://www.source.invalid/thread.1/"),
+        ):
+            release = _date_release_from_thread(
+                FakeSharedState(),
+                "https://www.source.invalid/thread.1/",
+                "Sample Show",
+                date(2026, 6, 19),
+            )
+
+        self.assertEqual({}, release)
+
+    def test_date_release_from_thread_rejects_unpinnable_download_post(self):
+        html = """
+        <article class="message--post">
+          <div class="bbWrapper">
+            <p>Title: Sample.Show.2026.06.19.1080p.WEB.h264-GRP</p>
+            <a href="#post-2">Quoted post reference</a>
+            <p>https://ddl.invalid/example</p>
+          </div>
+        </article>
+        """
+
+        with patch(
+            "quasarr.search.sources.dl._fetch_thread_page",
+            return_value=FakeResponse(html, "https://www.source.invalid/thread.1/"),
+        ):
+            release = _date_release_from_thread(
+                FakeSharedState(),
+                "https://www.source.invalid/thread.1/",
+                "Sample Show",
+                date(2026, 6, 19),
+            )
+
+        self.assertEqual({}, release)
+
+    def test_date_release_from_thread_pins_downloadable_post(self):
+        html = """
+        <article class="message--post" id="post-2">
+          <div class="bbWrapper">
+            <p>Title: Sample.Show.2026.06.19.1080p.WEB.h264-GRP</p>
+            <p>https://ddl.invalid/example</p>
+          </div>
+        </article>
+        """
+
+        with patch(
+            "quasarr.search.sources.dl._fetch_thread_page",
+            return_value=FakeResponse(html, "https://www.source.invalid/thread.1/"),
+        ):
+            release = _date_release_from_thread(
+                FakeSharedState(),
+                "https://www.source.invalid/thread.1/",
+                "Sample Show",
+                date(2026, 6, 19),
+            )
+
+        self.assertEqual(
+            "https://www.source.invalid/thread.1/#post-2",
+            release["source"],
+        )
+
+    def test_date_release_from_thread_scans_recent_thread_pages(self):
+        first_page_html = """
+        <html>
+          <a class="pageNav-page" href="/threads/sample-show-2026.1/page-2">2</a>
+          <article class="message--post" id="post-1">
+            <div class="bbWrapper">
+              <p>Title: Sample.Show.2026.06.12.1080p.WEB.h264-GRP</p>
+              <p>https://ddl.invalid/old-example</p>
+            </div>
+          </article>
+        </html>
+        """
+        second_page_html = """
+        <article class="message--post" id="post-2">
+          <div class="bbWrapper">
+            <p>Title: Sample.Show.2026.06.19.1080p.WEB.h264-GRP</p>
+            <p>https://ddl.invalid/example</p>
+          </div>
+        </article>
+        """
+        fetched_thread_urls = []
+
+        def fake_fetch(_shared_state, page_url):
+            fetched_thread_urls.append(page_url)
+            if page_url.endswith("/thread.1/"):
+                return FakeResponse(first_page_html, page_url)
+            if page_url.endswith("/thread.1/page-2"):
+                return FakeResponse(second_page_html, page_url)
+            raise AssertionError(f"unexpected fetch: {page_url}")
+
+        with patch("quasarr.search.sources.dl._fetch_thread_page", fake_fetch):
+            release = _date_release_from_thread(
+                FakeSharedState(),
+                "https://www.source.invalid/thread.1/",
+                "Sample Show",
+                date(2026, 6, 19),
+            )
+
+        self.assertEqual(
+            [
+                "https://www.source.invalid/thread.1/",
+                "https://www.source.invalid/thread.1/page-2",
+            ],
+            fetched_thread_urls,
+        )
+        self.assertEqual(
+            "https://www.source.invalid/thread.1/page-2#post-2",
+            release["source"],
+        )
+
+    def test_date_release_from_thread_finds_scheduled_series_generically(self):
+        episode_date = date(2031, 2, 3)
+        cases = (
+            (
+                "QZX Monday Night AlphaShow",
+                "QZX.AlphaShow.2031.02.03.1080p.WEB.h264-GRP",
+                "QZX.Monday.Night.AlphaShow.2031.02.03.1080p.WEB.h264-GRP",
+            ),
+            (
+                "QZX Friday Night BetaDown",
+                "QZX.BetaDown.2031.02.03.1080p.WEB.h264-GRP",
+                "QZX.Friday.Night.BetaDown.2031.02.03.1080p.WEB.h264-GRP",
+            ),
+        )
+
+        for search_string, posted_title, expected_title in cases:
+            with self.subTest(search_string=search_string):
+                html = f"""
+                <article class="message--post" id="post-2">
+                  <div class="bbWrapper">
+                    <p>Title: {posted_title}</p>
+                    <p>https://ddl.invalid/example</p>
+                  </div>
+                </article>
+                """
+                with patch(
+                    "quasarr.search.sources.dl._fetch_thread_page",
+                    return_value=FakeResponse(
+                        html, "https://www.source.invalid/thread.1/"
+                    ),
+                ):
+                    release = _date_release_from_thread(
+                        FakeSharedState(),
+                        "https://www.source.invalid/thread.1/",
+                        search_string,
+                        episode_date,
+                    )
+
+                self.assertEqual(expected_title, release["title"])
+
     def test_matches_compact_ct_style_spelling(self):
         current_year = datetime.now().year
 
@@ -519,6 +734,75 @@ class DlJahresthemaSearchTests(unittest.TestCase):
 
 
 class DlJahresthemaDownloadTests(unittest.TestCase):
+    def test_download_without_fragment_still_scans_thread_posts(self):
+        thread_html = """
+            <html>
+                <article class="message--post" data-content="post-1">
+                    <div class="bbWrapper">
+                        <h3>Sample issue</h3>
+                        <b>RapidGator</b>
+                        <a href="https://keeplinks.invalid/p/first">Download</a>
+                    </div>
+                </article>
+            </html>
+        """
+
+        with (
+            patch(
+                "quasarr.downloads.sources.dl.retrieve_and_validate_session",
+                return_value=object(),
+            ),
+            patch(
+                "quasarr.downloads.sources.dl.fetch_via_requests_session",
+                return_value=FakeResponse(thread_html),
+            ),
+        ):
+            result = DownloadSource().get_download_links(
+                FakeSharedState(),
+                "https://www.source.invalid/threads/sample.1/",
+                [],
+                "Sample issue",
+                "",
+            )
+
+        self.assertEqual(
+            [["https://keeplinks.invalid/p/first", "rapidgator"]],
+            result["links"],
+        )
+
+    def test_download_rejects_missing_requested_post_fragment(self):
+        thread_html = """
+            <html>
+                <article class="message--post" data-content="post-1">
+                    <div class="bbWrapper">
+                        <h3>Other issue</h3>
+                        <b>RapidGator</b>
+                        <a href="https://keeplinks.invalid/p/first">Download</a>
+                    </div>
+                </article>
+            </html>
+        """
+
+        with (
+            patch(
+                "quasarr.downloads.sources.dl.retrieve_and_validate_session",
+                return_value=object(),
+            ),
+            patch(
+                "quasarr.downloads.sources.dl.fetch_via_requests_session",
+                return_value=FakeResponse(thread_html),
+            ),
+        ):
+            result = DownloadSource().get_download_links(
+                FakeSharedState(),
+                "https://www.source.invalid/threads/sample.1/#post-99",
+                [],
+                "Sample issue",
+                "",
+            )
+
+        self.assertEqual([], result["links"])
+
     def test_download_prefers_requested_post_fragment(self):
         thread_html = """
             <html>

@@ -32,6 +32,10 @@ from quasarr.providers.sessions.dl import (
     retrieve_and_validate_session,
 )
 from quasarr.providers.utils import (
+    canonicalize_date_numbered_title,
+    date_numbering_release_matches,
+    date_numbering_search_strings,
+    date_numbering_title_matches,
     generate_download_link,
     get_base_search_category_id,
     is_imdb_id,
@@ -55,6 +59,7 @@ class Source(AbstractSearchSource):
         SEARCH_CAT_BOOKS,
     ]
     requires_login = True
+    supports_date_numbering = True
 
     def feed(
         self, shared_state: shared_state, start_time: float, search_category: str
@@ -183,32 +188,34 @@ class Source(AbstractSearchSource):
         self,
         shared_state,
         host,
-        search_string,
+        query_string,
+        match_search_string,
         search_id,
         page_num,
         imdb_id,
         search_category,
         season,
         episode,
+        episode_date,
     ):
         """
-        Search a single page. This method is called sequentially for each page.
+        Return accepted releases, the first-page search ID, and raw page identity.
         """
         page_releases = []
 
         base_search_category = get_base_search_category_id(search_category)
 
-        search_string = replace_umlauts(search_string)
+        query_string = replace_umlauts(query_string)
 
         try:
             if page_num == 1:
-                search_params = {"keywords": search_string, "c[title_only]": 1}
+                search_params = {"keywords": query_string, "c[title_only]": 1}
                 search_url = f"https://www.{host}/search/search"
             else:
                 if not search_id:
-                    return page_releases, None
+                    return page_releases, None, ()
 
-                search_params = {"page": page_num, "q": search_string, "o": "relevance"}
+                search_params = {"page": page_num, "q": query_string, "o": "relevance"}
                 search_url = f"https://www.{host}/search/{search_id}/"
 
             search_response = fetch_via_requests_session(
@@ -223,7 +230,7 @@ class Source(AbstractSearchSource):
                 debug(
                     f"[Page {page_num}] returned status {search_response.status_code}"
                 )
-                return page_releases, None
+                return page_releases, None, ()
 
             # Extract search ID from first page
             extracted_search_id = None
@@ -238,9 +245,24 @@ class Source(AbstractSearchSource):
 
             if not result_items:
                 trace(f"[Page {page_num}] found 0 results")
-                return page_releases, extracted_search_id
+                return page_releases, extracted_search_id, ()
 
             trace(f"[Page {page_num}] found {len(result_items)} results")
+
+            raw_page_signature = []
+            for item in result_items:
+                title_elem = item.select_one("h3.contentRow-title a")
+                if title_elem:
+                    raw_page_signature.append(
+                        title_elem.get("href")
+                        or re.sub(r"\s+", " ", title_elem.get_text(" ", strip=True))
+                    )
+                else:
+                    raw_page_signature.append(
+                        item.get("data-content-key")
+                        or re.sub(r"\s+", " ", item.get_text(" ", strip=True))
+                    )
+            raw_page_signature = tuple(raw_page_signature)
 
             for item in result_items:
                 try:
@@ -258,11 +280,20 @@ class Source(AbstractSearchSource):
                     title = re.sub(r"\s+", " ", title)
                     title = unescape(title)
                     title_normalized = _normalize_title_for_arr(title)
+                    is_date_thread_candidate = (
+                        episode_date
+                        and _should_check_thread_for_date_release(
+                            title_normalized,
+                            match_search_string,
+                            episode_date,
+                        )
+                    )
 
                     # Filter: Skip if no resolution or codec info (unless Magazarr/Lidarr)
                     if base_search_category not in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
                         if not (
-                            RESOLUTION_REGEX.search(title_normalized)
+                            is_date_thread_candidate
+                            or RESOLUTION_REGEX.search(title_normalized)
                             or CODEC_REGEX.search(title_normalized)
                         ):
                             continue
@@ -270,7 +301,7 @@ class Source(AbstractSearchSource):
                     # Filter: Skip XXX content unless explicitly searched for
                     if (
                         XXX_REGEX.search(title_normalized)
-                        and "xxx" not in search_string.lower()
+                        and "xxx" not in match_search_string.lower()
                     ):
                         continue
 
@@ -278,27 +309,46 @@ class Source(AbstractSearchSource):
                     if thread_url.startswith("/"):
                         thread_url = f"https://www.{host}{thread_url}"
 
-                    if not is_valid_release(
+                    date_release = {}
+                    is_release_valid = is_valid_release(
                         title_normalized,
                         search_category,
-                        search_string,
+                        match_search_string,
                         season,
                         episode,
-                    ):
-                        continue
+                        episode_date,
+                    )
+                    if not is_release_valid:
+                        if is_date_thread_candidate:
+                            date_release = _date_release_from_thread(
+                                shared_state,
+                                thread_url,
+                                match_search_string,
+                                episode_date,
+                            )
+                        if not date_release:
+                            continue
+                        title_normalized = date_release["title"]
+                    elif episode_date:
+                        title_normalized = canonicalize_date_numbered_title(
+                            title_normalized,
+                            match_search_string,
+                            episode_date,
+                        )
 
                     # Extract date and convert to RFC 2822 format
                     date_elem = item.select_one("time.u-dt")
                     iso_date = date_elem.get("datetime", "") if date_elem else ""
                     published = _convert_to_rss_date(iso_date)
 
-                    mb = 0
+                    mb = date_release.get("mb", 0)
                     password = ""
+                    source_url = date_release.get("source", thread_url)
 
                     link = generate_download_link(
                         shared_state,
                         title_normalized,
-                        thread_url,
+                        source_url,
                         mb,
                         password,
                         imdb_id or "",
@@ -314,21 +364,21 @@ class Source(AbstractSearchSource):
                                 "link": link,
                                 "size": mb * 1024 * 1024,
                                 "date": published,
-                                "source": thread_url,
+                                "source": source_url,
                             },
                             "type": "protected",
                         }
                     )
 
                     if _is_current_year_jahresthema_thread(
-                        title, search_string, base_search_category
+                        title, match_search_string, base_search_category
                     ):
                         page_releases.extend(
                             _expand_jahresthema_thread_releases(
                                 shared_state,
                                 host,
                                 thread_url,
-                                search_string,
+                                match_search_string,
                                 imdb_id,
                                 self.initials,
                                 search_category,
@@ -338,14 +388,14 @@ class Source(AbstractSearchSource):
                 except Exception as e:
                     debug(f"[Page {page_num}] error parsing item: {e}")
 
-            return page_releases, extracted_search_id
+            return page_releases, extracted_search_id, raw_page_signature
 
         except Exception as e:
             warn(f"[Page {page_num}] error: {e}")
             mark_hostname_issue(
                 self.initials, "search", str(e) if "e" in dir() else "Error occurred"
             )
-            return page_releases, None
+            return page_releases, None, ()
 
     def search(
         self,
@@ -355,10 +405,13 @@ class Source(AbstractSearchSource):
         search_string: str = "",
         season: int = None,
         episode: int = None,
+        episode_date=None,
     ) -> list[SearchRelease]:
         """
         Search with sequential pagination to find best quality releases.
-        Stops searching if a page returns 0 results or 10 seconds have elapsed.
+        Normal searches stop on a page with no accepted releases. Broad date searches
+        continue past filtered pages and stop only on an empty or duplicate raw page.
+        Both modes remain bounded by their wall-clock budget.
         """
         releases = []
         host = shared_state.values["config"]("Hostnames").get(self.initials)
@@ -370,15 +423,29 @@ class Source(AbstractSearchSource):
                 info(f"no title for IMDb {imdb_id}")
                 return releases
             search_string = title
-            if not season:
+            if not season and episode_date is None:
                 if year := get_year(imdb_id):
                     search_string += f" {year}"
 
         search_string = unescape(search_string)
-        max_search_duration = 7
+        search_strings = (
+            _prioritize_date_search_strings(
+                date_numbering_search_strings(
+                    search_string,
+                    episode_date,
+                ),
+                search_string,
+                episode_date,
+            )
+            if episode_date
+            else [search_string]
+        )
+        max_search_duration = 15 if episode_date else 7
 
         trace(
-            f"Starting sequential paginated search for '{search_string}' (Season: {season}, Episode: {episode}) - max {max_search_duration}s"
+            f"Starting sequential paginated search for '{search_string}' "
+            f"(Season: {season}, Episode: {episode}) - "
+            f"max {max_search_duration}s"
         )
 
         try:
@@ -387,52 +454,87 @@ class Source(AbstractSearchSource):
                 warn(f"Could not retrieve valid session for {host}")
                 return releases
 
-            search_id = None
-            page_num = 0
             search_start_time = time.time()
-            release_titles_per_page = set()
+            seen_release_titles = set()
 
-            # Sequential search through pages until timeout or no results
-            while (time.time() - search_start_time) < max_search_duration:
-                page_num += 1
+            for current_search_string in search_strings:
+                search_id = None
+                page_num = 0
+                seen_page_signatures = set()
 
-                page_releases, extracted_search_id = self._search_single_page(
-                    shared_state,
-                    host,
-                    search_string,
-                    search_id,
-                    page_num,
-                    imdb_id,
-                    search_category,
-                    season,
-                    episode,
-                )
+                # Sequential search through pages until timeout or mode-specific stop
+                while (time.time() - search_start_time) < max_search_duration:
+                    page_num += 1
 
-                page_release_titles = tuple(
-                    pr["details"]["title"] for pr in page_releases
-                )
-                if page_release_titles in release_titles_per_page:
-                    trace(f"[Page {page_num}] duplicate page detected, stopping")
-                    break
-                release_titles_per_page.add(page_release_titles)
+                    (
+                        page_releases,
+                        extracted_search_id,
+                        raw_page_signature,
+                    ) = self._search_single_page(
+                        shared_state,
+                        host,
+                        current_search_string,
+                        search_string,
+                        search_id,
+                        page_num,
+                        imdb_id,
+                        search_category,
+                        season,
+                        episode,
+                        episode_date,
+                    )
 
-                # Update search_id from first page
-                if page_num == 1:
-                    search_id = extracted_search_id
-                    if not search_id:
-                        trace("Could not extract search ID, stopping pagination")
+                    page_signature = (
+                        raw_page_signature
+                        if episode_date is not None
+                        else tuple(pr["details"]["title"] for pr in page_releases)
+                    )
+                    if page_signature and page_signature in seen_page_signatures:
+                        trace(f"[Page {page_num}] duplicate page detected, stopping")
                         break
+                    if page_signature:
+                        seen_page_signatures.add(page_signature)
 
-                # Add releases from this page
-                releases.extend(page_releases)
-                trace(
-                    f"[Page {page_num}] completed with {len(page_releases)} valid releases"
-                )
+                    # Update search_id from first page
+                    if page_num == 1:
+                        search_id = extracted_search_id
+                        if not search_id:
+                            trace("Could not extract search ID, stopping pagination")
+                            break
 
-                # Stop if this page returned 0 results
-                if len(page_releases) == 0:
-                    trace(f"[Page {page_num}] returned 0 results, stopping pagination")
-                    break
+                    if episode_date is None:
+                        releases.extend(page_releases)
+                    else:
+                        for release in page_releases:
+                            release_title = release["details"]["title"]
+                            dedupe_key = release_title.strip().casefold()
+                            if dedupe_key in seen_release_titles:
+                                continue
+                            seen_release_titles.add(dedupe_key)
+                            releases.append(release)
+
+                    trace(
+                        f"[Page {page_num}] completed with {len(page_releases)} valid releases"
+                    )
+
+                    if episode_date is None:
+                        if not page_releases:
+                            trace(
+                                f"[Page {page_num}] returned 0 valid results, "
+                                "stopping pagination"
+                            )
+                            break
+                    elif not raw_page_signature:
+                        trace(
+                            f"[Page {page_num}] returned 0 source results, "
+                            "stopping pagination"
+                        )
+                        break
+                    elif not page_releases:
+                        trace(
+                            f"[Page {page_num}] source results were filtered; "
+                            "continuing date pagination"
+                        )
 
         except Exception as e:
             info(f"search error: {e}")
@@ -451,6 +553,30 @@ class Source(AbstractSearchSource):
         if releases:
             clear_hostname_issue(self.initials)
         return releases
+
+
+def _prioritize_date_search_strings(search_strings, search_string, episode_date):
+    """Try requested-date variants before broad and adjacent-date fallbacks."""
+    requested_date_suffixes = (
+        f" {episode_date:%Y.%m.%d}",
+        f" {episode_date:%Y-%m-%d}",
+        f" {episode_date:%Y %m %d}",
+    )
+    exact_full_title = [
+        f"{search_string}{suffix}" for suffix in requested_date_suffixes
+    ]
+
+    prioritized = []
+    for candidate in exact_full_title:
+        if candidate in search_strings and candidate not in prioritized:
+            prioritized.append(candidate)
+    for candidate in search_strings:
+        if candidate.endswith(requested_date_suffixes) and candidate not in prioritized:
+            prioritized.append(candidate)
+    prioritized.extend(
+        candidate for candidate in search_strings if candidate not in prioritized
+    )
+    return prioritized
 
 
 def _convert_to_rss_date(iso_date_str):
@@ -482,6 +608,23 @@ def _normalize_title_for_arr(title):
     return title
 
 
+def _should_check_thread_for_date_release(title, search_string=None, episode_date=None):
+    normalized = replace_umlauts(unescape(str(title or ""))).lower()
+    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+    tokens = set(normalized.split())
+
+    if episode_date and str(episode_date.year) not in tokens:
+        return False
+
+    if not search_string:
+        return bool(re.search(r"\b(?:19|20)\d{2}\b", normalized))
+
+    if not date_numbering_title_matches(title, search_string, episode_date):
+        return False
+
+    return bool(re.search(r"\b(?:19|20)\d{2}\b", normalized))
+
+
 def _is_current_year_jahresthema_thread(title, search_string, base_search_category):
     if base_search_category != SEARCH_CAT_BOOKS:
         return False
@@ -510,7 +653,7 @@ def _magazine_title_matches(search_string, title):
 
 def _magazine_match_tokens(text):
     text = replace_umlauts(unescape(str(text or ""))).lower()
-    text = re.sub(r"\bc\s*['`´’]?\s*t\b", "ct", text)
+    text = re.sub(r"\bc\s*['`\u00b4\u2019]?\s*t\b", "ct", text)
     text = re.sub(r"[^a-z0-9]+", " ", text)
 
     ignored = {
@@ -610,6 +753,118 @@ def _fetch_thread_page(shared_state, page_url):
         debug(f"Jahresthema page returned status {response.status_code}: {page_url}")
         return None
     return response
+
+
+def _date_release_from_thread(
+    shared_state,
+    thread_url,
+    search_string,
+    episode_date,
+):
+    if episode_date is None:
+        return {}
+
+    first_page = _fetch_thread_page(shared_state, thread_url)
+    if first_page is None:
+        return {}
+
+    last_page = _extract_last_thread_page(first_page.text)
+    start_page = max(1, last_page - 4)
+    page_numbers = [1, *range(start_page, last_page + 1)]
+    page_numbers = list(dict.fromkeys(page_numbers))
+
+    for page_num in page_numbers:
+        page_url = (
+            thread_url
+            if page_num == 1
+            else _thread_page_url(
+                thread_url,
+                page_num,
+            )
+        )
+        response = (
+            first_page
+            if page_num == 1
+            else _fetch_thread_page(
+                shared_state,
+                page_url,
+            )
+        )
+        if response is None:
+            continue
+
+        soup = BeautifulSoup(response.text, "html.parser")
+        for post in soup.select("article.message--post"):
+            title = _date_release_title_from_post(post)
+            if not title:
+                continue
+            if date_numbering_release_matches(title, search_string, episode_date):
+                if not _post_contains_supported_download(post):
+                    continue
+                source = _post_url(page_url, post)
+                if not urlsplit(source).fragment:
+                    continue
+                arr_title = canonicalize_date_numbered_title(
+                    title, search_string, episode_date
+                )
+                return {
+                    "title": arr_title,
+                    "mb": _date_release_size_mb_from_post(post),
+                    "source": source,
+                }
+
+    return {}
+
+
+def _date_release_title_from_post(post):
+    content = _own_message_content(post)
+    text = content.get_text("\n", strip=True)
+    lines = text.splitlines()
+
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        match = re.match(r"(?i)^(?:title|titel)\s*:\s*(.+)$", stripped)
+        if match:
+            return _normalize_title_for_arr(_clean_issue_title(match.group(1)))
+
+        if stripped.lower() in {"title:", "titel:"} and index + 1 < len(lines):
+            return _normalize_title_for_arr(_clean_issue_title(lines[index + 1]))
+
+    text_flat = " ".join(lines)
+    match = re.search(
+        r"(?i)\b([A-Z0-9][A-Z0-9.\s'&-]{1,120}?"
+        r"[.\s]+(?:19|20)\d{2}[.\s]+\d{2}[.\s]+\d{2}"
+        r".{0,120}?)\b",
+        text_flat,
+    )
+    if match:
+        return _normalize_title_for_arr(_clean_issue_title(match.group(1)))
+
+    return ""
+
+
+def _date_release_size_mb_from_post(post):
+    content = _own_message_content(post)
+    text = content.get_text("\n", strip=True)
+    match = re.search(
+        r"(?i)\b(?:size|gr\u00f6\u00dfe|groesse|grosse)\s*:\s*"
+        r"(\d+(?:[.,]\d+)?)\s*([kmgt]i?b|[kmgt]b)\b",
+        text,
+    )
+    if not match:
+        return 0
+
+    size = float(match.group(1).replace(",", "."))
+    unit = match.group(2).lower()
+    if unit.startswith("k"):
+        return round(size / 1024)
+    if unit.startswith("m"):
+        return round(size)
+    if unit.startswith("g"):
+        return round(size * 1024)
+    if unit.startswith("t"):
+        return round(size * 1024 * 1024)
+    return 0
 
 
 def _extract_last_thread_page(html):
@@ -796,7 +1051,7 @@ def _looks_like_issue_title(title, search_string):
         return False
 
     if re.search(
-        r"\b(?:download|mirror|passwort|password|size|groesse|grosse|größe|mb|gb)\b",
+        r"\b(?:download|mirror|passwort|password|size|groesse|grosse|gr\u00f6\u00dfe|mb|gb)\b",
         replace_umlauts(title_lower),
     ):
         return False
@@ -877,10 +1132,5 @@ def _post_fragment(post):
         value = str(post.get(attr) or "").strip("#")
         if value:
             return value
-
-    for link in post.select("a[href]"):
-        fragment = urlsplit(link.get("href", "")).fragment
-        if fragment:
-            return fragment
 
     return ""
