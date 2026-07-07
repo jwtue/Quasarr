@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 import requests
 
-from quasarr.providers.log import error, trace, warn
+from quasarr.providers.log import debug, error, trace, warn
 
 _SHARED_STATE_KEY = "sonarr_client"
 
@@ -91,6 +91,35 @@ class SonarrAPIClient:
             )
             or {}
         )
+
+    def series_by_tvdb(self, tvdb_id):
+        """Return the library series matching the TVDB id, or None if not present.
+
+        ``/series?tvdbId=`` returns at most one library entry; unlike
+        ``/series/lookup`` this is the on-disk series carrying ``id`` (the
+        seriesId needed for episode queries).
+        """
+        if not tvdb_id:
+            return None
+        results = self._get("/series", params={"tvdbId": tvdb_id})
+        if not results:
+            return None
+        return results[0]
+
+    def episodes(self, series_id, include_episode_file=False):
+        """Return all episodes for a (library) seriesId, or None on failure.
+
+        Each record carries ``seasonNumber``, ``episodeNumber``, ``monitored``
+        and ``hasFile``. With ``include_episode_file`` the on-disk file record
+        (``episodeFile``, carrying ``qualityCutoffNotMet``) is embedded for
+        episodes that have one.
+        """
+        if series_id is None:
+            return None
+        params = {"seriesId": series_id}
+        if include_episode_file:
+            params["includeEpisodeFile"] = "true"
+        return self._get("/episode", params=params)
 
 
 def get_tmdb_id(shared_state, imdb_id):
@@ -202,3 +231,71 @@ def get_wanted_episodes(shared_state, limit=50):
                     return episodes
 
     return episodes
+
+
+def wanted_season_episode_numbers(shared_state, imdb_id, season):
+    """Episode numbers still missing for one series+season, or None.
+
+    Returns the set of ``episodeNumber`` values that either have no file yet
+    (missing) or whose file is below the quality cutoff (upgrade wanted) for
+    the given season. Monitored state is deliberately ignored: season packs
+    are also grabbed interactively for unmonitored series/seasons, and
+    including an unmonitored missing episode can never download more than the
+    unfiltered full pack would. Returns ``None`` — the "cannot decide, fall
+    back to the full season pack" signal — when Sonarr is not configured, the
+    series is not in the library, or any lookup fails. An empty set means
+    nothing is missing from this season.
+
+    Resolution: IMDb id (from the source page) -> Sonarr series lookup ->
+    tvdbId -> library series -> episode list. Used by season-pack sources to
+    grab only the episodes still needed instead of re-downloading the whole
+    (weekly growing) pack.
+    """
+    client = get_client(shared_state)
+    if client is None or not imdb_id or season is None:
+        debug(
+            "wanted_season_episode_numbers undecidable: "
+            f"client={'set' if client else 'None'}, imdb_id={imdb_id!r}, "
+            f"season={season!r}"
+        )
+        return None
+    try:
+        season = int(season)
+    except (TypeError, ValueError):
+        debug(f"wanted_season_episode_numbers undecidable: bad season {season!r}")
+        return None
+
+    series = client.series_lookup_imdb(imdb_id)
+    if not series:
+        debug(
+            f"wanted_season_episode_numbers undecidable: Sonarr lookup for "
+            f"{imdb_id!r} returned no series"
+        )
+        return None
+    library_series = client.series_by_tvdb(series.get("tvdbId"))
+    if not library_series:
+        debug(
+            f"wanted_season_episode_numbers undecidable: series {imdb_id!r} "
+            f"(tvdbId {series.get('tvdbId')!r}) is not in the Sonarr library"
+        )
+        return None
+    records = client.episodes(library_series.get("id"), include_episode_file=True)
+    if records is None:
+        debug(
+            f"wanted_season_episode_numbers undecidable: episode list for "
+            f"seriesId {library_series.get('id')!r} could not be fetched"
+        )
+        return None
+
+    wanted = set()
+    for record in records:
+        if record.get("seasonNumber") != season:
+            continue
+        if record.get("hasFile") and not (record.get("episodeFile") or {}).get(
+            "qualityCutoffNotMet"
+        ):
+            continue
+        number = record.get("episodeNumber")
+        if number is not None:
+            wanted.add(int(number))
+    return wanted

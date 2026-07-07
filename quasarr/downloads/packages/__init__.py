@@ -14,6 +14,10 @@ from quasarr.constants import (
     NOT_DOWNLOADABLE_MARKERS,
     PACKAGE_ID_PATTERN,
 )
+from quasarr.downloads.episode_filter import (
+    apply_episode_filter,
+    clear_episode_filter,
+)
 from quasarr.providers.jd_cache import JDPackageCache
 from quasarr.providers.log import debug, info, trace
 from quasarr.storage.categories import get_download_category_from_package_id
@@ -766,10 +770,22 @@ def get_packages(shared_state, _cache=None, auto_start=True):
             if is_quasarr_package(comment):
                 package_uuid = package.get("uuid")
                 if package_uuid:
-                    package_link_ids = [
-                        link.get("uuid")
+                    package_links = [
+                        link
                         for link in linkgrabber_links
-                        if link.get("packageUUID") == package_uuid and link.get("uuid")
+                        if link.get("packageUUID") == package_uuid
+                    ]
+                    # Season-pack episode filter: now that the linkgrabber has
+                    # finished collecting, filenames are known — drop links of
+                    # episodes already on disk before the package starts. When
+                    # links were removed, start on the next poll so JD's state
+                    # has settled.
+                    if apply_episode_filter(
+                        shared_state, comment, package.get("name"), package_links
+                    ):
+                        break
+                    package_link_ids = [
+                        link.get("uuid") for link in package_links if link.get("uuid")
                     ]
                     if package_link_ids:
                         debug(
@@ -864,6 +880,8 @@ def delete_package(shared_state, package_id, package_title=None, missing_ok=Fals
     )
 
     try:
+        clear_episode_filter(shared_state, package_id)
+
         # Create cache for this single delete operation
         # Safe to reuse within this request since we fetch->find->delete atomically
         cache = JDPackageCache(shared_state.get_device())

@@ -60,11 +60,13 @@ from quasarr.storage.setup.radarr import (
 )
 from quasarr.storage.setup.sonarr import (
     delete_skip_sonarr_preference,
+    get_episode_filter_setting_data,
     get_sonarr_settings_data,
     initialize_sonarr_client,
     is_sonarr_configured,
     is_sonarr_skipped,
     refresh_sonarr_client,
+    save_episode_filter_setting,
     save_sonarr_settings,
     sonarr_config,
 )
@@ -84,6 +86,7 @@ __all__ = [
     "delete_skip_sonarr_preference",
     "flaresolverr_config",
     "flaresolverr_form_html",
+    "get_episode_filter_setting_data",
     "get_filecrypt_setting_data",
     "get_flaresolverr_status_data",
     "get_notification_settings_data",
@@ -111,6 +114,7 @@ __all__ = [
     "refresh_radarr_client",
     "refresh_sonarr_client",
     "render_reconnect_success",
+    "save_episode_filter_setting",
     "save_filecrypt_setting",
     "save_flaresolverr_url",
     "save_hostnames",

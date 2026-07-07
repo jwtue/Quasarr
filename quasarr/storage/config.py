@@ -63,6 +63,7 @@ class Config(object):
         "Sonarr": [
             ("url", "str", ""),
             ("api_key", "secret", ""),
+            ("season_pack_episode_filter", "bool", "False"),
         ],
         "Notifications": [
             ("discord_webhook", "secret", ""),

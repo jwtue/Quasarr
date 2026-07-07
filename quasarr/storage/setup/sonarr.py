@@ -59,6 +59,10 @@ def is_sonarr_skipped():
     return bool(DataBase(SKIP_SONARR_TABLE).retrieve("skipped"))
 
 
+def _flag_enabled(value):
+    return str(value).strip().lower() in ("true", "1", "yes", "on")
+
+
 def get_sonarr_settings_data(shared_state):
     response.content_type = "application/json"
     config = Config("Sonarr")
@@ -72,6 +76,32 @@ def get_sonarr_settings_data(shared_state):
             "configured": is_sonarr_configured(shared_state),
             "skipped": is_sonarr_skipped(),
         },
+    }
+
+
+def get_episode_filter_setting_data(shared_state):
+    """Season-pack episode filter toggle (stored in the Sonarr config section)."""
+    response.content_type = "application/json"
+    return {
+        "success": True,
+        "enabled": _flag_enabled(Config("Sonarr").get("season_pack_episode_filter")),
+    }
+
+
+def save_episode_filter_setting(shared_state):
+    response.content_type = "application/json"
+
+    data = request.json
+    if not isinstance(data, dict):
+        return {"success": False, "message": "Invalid JSON payload"}
+
+    enabled = _flag_enabled(data.get("enabled"))
+    Config("Sonarr").save("season_pack_episode_filter", "true" if enabled else "false")
+
+    return {
+        "success": True,
+        "message": "Season pack setting saved successfully",
+        "enabled": enabled,
     }
 
 

@@ -10,6 +10,10 @@ from quasarr.constants import (
     CLIENT_DOWNLOAD_CATEGORY_FALLBACK_MAP,
     PROTECTED_PATTERNS,
 )
+from quasarr.downloads.episode_filter import (
+    clear_episode_filter,
+    maybe_store_episode_filter,
+)
 from quasarr.downloads.linkcrypters.hide import decrypt_links_if_hide
 from quasarr.downloads.mirror_filters import filter_final_download_urls
 from quasarr.downloads.packages import get_packages
@@ -613,6 +617,11 @@ def download(
             size_mb,
             label,
         )
+        if result.get("success") and not result.get("failed"):
+            # Season-pack episode filter: remember the missing episodes now;
+            # they are applied once the (possibly CAPTCHA-decrypted) links sit
+            # fully collected in JDownloader's linkgrabber.
+            maybe_store_episode_filter(shared_state, package_id, title, imdb_id)
         return {"package_id": package_id, **result}
 
     except Exception as e:
@@ -636,6 +645,7 @@ def download(
 def fail(title, package_id, shared_state, reason="Unknown error"):
     """Mark download as failed."""
     try:
+        clear_episode_filter(shared_state, package_id)
         error(f"Reason for failure: {reason}")
         StatsHelper(shared_state).increment_failed_downloads()
         blob = json.dumps({"title": title, "error": reason})

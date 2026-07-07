@@ -186,6 +186,12 @@ def get_api(shared_state_dict, shared_state_lock):
         sonarr_config = Config("Sonarr")
         sonarr_url = sonarr_config.get("url") or ""
         sonarr_api_key = sonarr_config.get("api_key") or ""
+        episode_filter_checked = (
+            "checked"
+            if str(sonarr_config.get("season_pack_episode_filter")).strip().lower()
+            in ("true", "1", "yes", "on")
+            else ""
+        )
 
         flaresolverr_warning = ""
         if is_flaresolverr_skipped:
@@ -393,6 +399,33 @@ def get_api(shared_state_dict, shared_state_lock):
                     </p>
                     <div id="filecrypt-status" class="notification-status"></div>
                     <p>{render_button("Save Filecrypt Setting", "primary", {"onclick": "saveFilecryptSettings()", "type": "button", "id": "filecryptSaveBtn"})}</p>
+                </div>
+            </details>
+        </div>
+
+        <div class="section">
+            <details id="episodeFilterDetails">
+                <summary id="episodeFilterSummary">📺 Season Packs</summary>
+                <div class="api-settings">
+                    <div class="notification-provider-card">
+                        <div class="notification-toggle-grid timeout-toggle-grid">
+                            <div class="notification-toggle-header">Setting</div>
+                            <div class="notification-toggle-header toggle-cell">Enabled</div>
+                            <div class="notification-toggle-label">
+                                <span class="setting-row-title">Episode filter</span>
+                                <span class="setting-row-sub">Only download episodes still missing in Sonarr when a season pack is grabbed</span>
+                            </div>
+                            <div class="notification-toggle-input toggle-cell">
+                                {render_switch("episode-filter-enabled", episode_filter_checked)}
+                            </div>
+                        </div>
+                    </div>
+                    <p class="api-hint setting-row-hint">
+                        Requires Sonarr. Episodes already on disk are removed from the package in JDownloader once the link filenames are known.
+                        If links cannot be safely mapped to episodes, the full pack is downloaded.
+                    </p>
+                    <div id="episode-filter-status" class="notification-status"></div>
+                    <p>{render_button("Save Season Pack Setting", "primary", {"onclick": "saveEpisodeFilterSettings()", "type": "button", "id": "episodeFilterSaveBtn"})}</p>
                 </div>
             </details>
         </div>
@@ -1518,6 +1551,47 @@ def get_api(shared_state_dict, shared_state_lock):
                     if (saveButton) {{
                         saveButton.disabled = false;
                         saveButton.textContent = 'Save Filecrypt Setting';
+                    }}
+                    if (checkbox) {{
+                        checkbox.disabled = false;
+                    }}
+                }}
+            }}
+
+            async function saveEpisodeFilterSettings() {{
+                var saveButton = document.getElementById('episodeFilterSaveBtn');
+                var checkbox = document.getElementById('episode-filter-enabled');
+                setNotificationStatus('episode-filter-status', 'Saving season pack setting...', true);
+
+                if (saveButton) {{
+                    saveButton.disabled = true;
+                    saveButton.textContent = 'Saving...';
+                }}
+                if (checkbox) {{
+                    checkbox.disabled = true;
+                }}
+
+                try {{
+                    var response = await quasarrApiFetch('/api/episode_filter/settings', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{ enabled: !!(checkbox && checkbox.checked) }})
+                    }});
+                    var data = await response.json();
+                    if (!response.ok || !data.success) {{
+                        throw new Error(data.message || 'Failed to save season pack setting');
+                    }}
+
+                    if (checkbox) {{
+                        checkbox.checked = !!data.enabled;
+                    }}
+                    setNotificationStatus('episode-filter-status', '✅ ' + data.message, true);
+                }} catch (error) {{
+                    setNotificationStatus('episode-filter-status', '❌ ' + error.message, false);
+                }} finally {{
+                    if (saveButton) {{
+                        saveButton.disabled = false;
+                        saveButton.textContent = 'Save Season Pack Setting';
                     }}
                     if (checkbox) {{
                         checkbox.disabled = false;
