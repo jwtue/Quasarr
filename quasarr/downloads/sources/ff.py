@@ -12,7 +12,7 @@ from quasarr.constants import DOWNLOAD_REQUEST_TIMEOUT_SECONDS
 from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.cloudflare import LazyFlareSolverrSession
 from quasarr.providers.hostname_issues import mark_hostname_issue
-from quasarr.providers.log import debug, info
+from quasarr.providers.log import debug, info, warn
 from quasarr.providers.utils import detect_crypter_type
 
 
@@ -35,7 +35,7 @@ class Source(AbstractDownloadSource):
         user_agent = shared_state.values["user_agent"]
 
         if url.startswith(f"https://{host}/external"):
-            resolved_url = _resolve_ff_redirect(url, user_agent, host)
+            resolved_url = _resolve_ff_redirect(url, user_agent, host, cf_session)
             if not resolved_url:
                 return {"links": [], "imdb_id": None}
             return {
@@ -90,7 +90,9 @@ class Source(AbstractDownloadSource):
                 if not release_url:
                     return {"links": [], "imdb_id": imdb_id}
 
-                resolved_url = _resolve_ff_redirect(release_url, user_agent, host)
+                resolved_url = _resolve_ff_redirect(
+                    release_url, user_agent, host, cf_session
+                )
                 if not resolved_url:
                     return {"links": [], "imdb_id": imdb_id}
 
@@ -141,7 +143,7 @@ def _select_release_link(base_url, entry, mirrors):
     return links[0]
 
 
-def _resolve_ff_redirect(url, user_agent, host):
+def _resolve_ff_redirect(url, user_agent, host, cf_session):
     current_url = url
     visited = set()
     session = requests.Session()
@@ -157,14 +159,19 @@ def _resolve_ff_redirect(url, user_agent, host):
             return current_url
 
         try:
-            r = session.get(
+            r = cf_session.get(
                 current_url,
-                allow_redirects=False,
-                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
-                headers={"User-Agent": user_agent},
+                {"User-Agent": user_agent},
+                DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+                request_get=lambda request_url, headers, timeout: session.get(
+                    request_url,
+                    allow_redirects=False,
+                    timeout=timeout,
+                    headers=headers,
+                ),
             )
         except Exception as e:
-            info(f"Error fetching redirected URL for {url}: {e}")
+            warn(f"Error fetching redirected URL for {url}: {e}")
             mark_hostname_issue(
                 Source.initials,
                 "download",
@@ -177,7 +184,7 @@ def _resolve_ff_redirect(url, user_agent, host):
             next_url = urljoin(current_url, location)
             debug(f"Redirected from <d>{current_url}</d> to <d>{next_url}</d>")
             if "/404.html" in next_url:
-                info(f"Link redirected to 404 page: <d>{next_url}</d>")
+                warn(f"Link redirected to 404 page: <d>{next_url}</d>")
                 return None
             if detect_crypter_type(next_url) is not None:
                 return next_url
@@ -188,10 +195,10 @@ def _resolve_ff_redirect(url, user_agent, host):
 
         final_url = (r.url or current_url).strip()
         if "/404.html" in final_url:
-            info(f"Link redirected to 404 page: <d>{final_url}</d>")
+            warn(f"Link redirected to 404 page: <d>{final_url}</d>")
             return None
         if r.status_code >= 400:
-            info(
+            warn(
                 f"Error fetching redirected URL for {url}: HTTP {r.status_code} at {final_url}"
             )
             mark_hostname_issue(
@@ -200,7 +207,11 @@ def _resolve_ff_redirect(url, user_agent, host):
                 f"HTTP {r.status_code} while resolving redirect",
             )
             return None
-        info(
+        if detect_crypter_type(final_url) is not None:
+            return final_url
+        if urlparse(final_url).netloc != source_netloc:
+            return final_url
+        warn(
             f"Blocked attempt to resolve {url}. Your IP may be banned. Try again later."
         )
         return None

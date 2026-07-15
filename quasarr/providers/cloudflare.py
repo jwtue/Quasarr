@@ -3,6 +3,8 @@
 # Project by https://github.com/rix1337
 
 import json
+import threading
+import time
 import urllib.parse
 import uuid
 
@@ -15,6 +17,51 @@ from quasarr.constants import (
 )
 from quasarr.providers.log import debug
 from quasarr.providers.utils import is_flaresolverr_available
+
+_CLOUDFLARE_GATE_TTL_SECONDS = 24 * 60 * 60
+_cloudflare_gate_expires_at = {}
+_cloudflare_gate_lock = threading.Lock()
+
+
+def _cloudflare_gate_key(url):
+    return urllib.parse.urlparse(url).netloc.casefold()
+
+
+def _is_cloudflare_gated(url):
+    key = _cloudflare_gate_key(url)
+    if not key:
+        return False
+
+    now = time.monotonic()
+    with _cloudflare_gate_lock:
+        expires_at = _cloudflare_gate_expires_at.get(key)
+        if expires_at is None:
+            return False
+        if expires_at <= now:
+            _cloudflare_gate_expires_at.pop(key, None)
+            return False
+        return True
+
+
+def _mark_cloudflare_gated(url):
+    """Remember a challenged netloc and return True only for first detection."""
+    key = _cloudflare_gate_key(url)
+    if not key:
+        return True
+
+    now = time.monotonic()
+    with _cloudflare_gate_lock:
+        expires_at = _cloudflare_gate_expires_at.get(key)
+        if expires_at is not None and expires_at > now:
+            return False
+        _cloudflare_gate_expires_at[key] = now + _CLOUDFLARE_GATE_TTL_SECONDS
+        return True
+
+
+def _clear_cloudflare_gate_cache():
+    """Clear process-local gate state for hermetic tests."""
+    with _cloudflare_gate_lock:
+        _cloudflare_gate_expires_at.clear()
 
 
 def is_cloudflare_challenge(html: str) -> bool:
@@ -53,9 +100,18 @@ class LazyFlareSolverrSession:
         self.session_id = None
 
     def get(self, url, headers, timeout, request_get=requests.get):
-        response = request_get(url, headers=headers, timeout=timeout)
-        if response.status_code != 403 and not is_cloudflare_challenge(response.text):
-            return response
+        if not _is_cloudflare_gated(url):
+            response = request_get(url, headers=headers, timeout=timeout)
+            if response.status_code != 403 and not is_cloudflare_challenge(
+                response.text
+            ):
+                return response
+
+            if _mark_cloudflare_gated(url):
+                debug(
+                    "Detected Cloudflare protection. Routing this host through "
+                    "FlareSolverr for 24 hours."
+                )
 
         if not is_flaresolverr_available(self.shared_state):
             raise requests.RequestException(
@@ -72,11 +128,14 @@ class LazyFlareSolverrSession:
                     "Could not create FlareSolverr session for Cloudflare bypass"
                 )
 
-        debug("Encountered Cloudflare protection. Retrying with FlareSolverr...")
+        # Browser solves can take longer than a plain search request. Keep the
+        # caller's HTTP budget for the initial request, but never give an
+        # actual FlareSolverr solve less than the existing session budget.
+        solver_timeout = max(timeout, SESSION_REQUEST_TIMEOUT_SECONDS)
         response = flaresolverr_get(
             self.shared_state,
             url,
-            timeout=timeout,
+            timeout=solver_timeout,
             session_id=self.session_id,
         )
         if (

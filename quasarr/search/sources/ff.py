@@ -164,7 +164,7 @@ class Source(AbstractSearchSource):
                             }
                         )
                 except Exception as e:
-                    info(f"Error parsing feed: {e}")
+                    warn(f"Error parsing feed: {e}")
                     mark_hostname_issue(
                         self.initials,
                         "feed",

@@ -135,7 +135,7 @@ class Source(AbstractSearchSource):
                         )
 
                 except Exception as e:
-                    info(f"Error parsing feed: {e}")
+                    warn(f"Error parsing feed: {e}")
                     mark_hostname_issue(
                         self.initials,
                         "feed",
@@ -293,13 +293,13 @@ class Source(AbstractSearchSource):
                     r.raise_for_status()
                     resp_json = r.json()
                     if resp_json.get("error"):
-                        info(
+                        warn(
                             f"SF API error for series '{series_id}' at URL {api_url}: {resp_json.get('message')}"
                         )
                         continue
                     data_html = resp_json.get("html", "")
                 except Exception as e:
-                    info(f"Error loading SF API for {series_id} at {api_url}: {e}")
+                    warn(f"Error loading SF API for {series_id} at {api_url}: {e}")
                     mark_hostname_issue(
                         self.initials,
                         "search",
@@ -494,7 +494,7 @@ class Source(AbstractSearchSource):
 
             mirrors = {"name": name, "season": season, "episodes": episodes}
         except Exception as e:
-            info(f"Error parsing mirrors: {e}")
+            warn(f"Error parsing mirrors: {e}")
             mark_hostname_issue(
                 self.initials, "feed", str(e) if "e" in dir() else "Error occurred"
             )

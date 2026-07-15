@@ -15,7 +15,7 @@ from quasarr.downloads.mirror_filters import filter_final_download_urls
 from quasarr.downloads.packages import get_packages
 from quasarr.downloads.sources import get_sources as get_download_sources
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
-from quasarr.providers.log import info, warn
+from quasarr.providers.log import error, info, warn
 from quasarr.providers.notifications import (
     send_notification,
     send_tracked_notification,
@@ -636,11 +636,11 @@ def download(
 def fail(title, package_id, shared_state, reason="Unknown error"):
     """Mark download as failed."""
     try:
-        info(f"Reason for failure: {reason}")
+        error(f"Reason for failure: {reason}")
         StatsHelper(shared_state).increment_failed_downloads()
         blob = json.dumps({"title": title, "error": reason})
         shared_state.get_db("failed").store(package_id, json.dumps(blob))
-        info(f'Package "{title}" marked as failed!')
+        warn(f'Package "{title}" marked as failed!')
     except Exception as e:
-        info(f'Error marking package "{package_id}" as failed: {e}')
+        error(f'Error marking package "{package_id}" as failed: {e}')
     return {"success": True, "title": title, "failed": True}
