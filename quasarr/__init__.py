@@ -22,6 +22,7 @@ from quasarr.providers.log import (
     get_log_level,
     info,
     log_level_names,
+    warn,
 )
 from quasarr.providers.notifications import send_notification
 from quasarr.providers.notifications.helpers.notification_types import NotificationType
@@ -48,11 +49,15 @@ from quasarr.storage.setup import (
     initialize_sonarr_client,
     initialize_timeout_slow_mode_settings,
     is_radarr_configured,
+    is_radarr_skipped,
     is_sonarr_configured,
+    is_sonarr_skipped,
     jdownloader_config,
     path_config,
     radarr_config,
+    select_arr_client_config,
     sonarr_config,
+    split_arr_required_sites,
 )
 from quasarr.storage.sqlite_database import DataBase
 
@@ -183,29 +188,80 @@ def run():
         if not flaresolverr_url and not flaresolverr_skipped:
             flaresolverr_config(shared_state)
 
-        # Check Radarr configuration if any configured hostname requires it
+        # Configure one *arr client if configured hostnames need movie or TV search.
         initialize_radarr_client(shared_state)
-        if not is_radarr_configured(shared_state):
-            radarr_required_sites = [
-                site
-                for site in get_radarr_required_hostnames()
-                if Config("Hostnames").get(site)
-            ]
-            if radarr_required_sites:
-                radarr_config(shared_state, radarr_required_sites)
-                initialize_radarr_client(shared_state)
-
-        # Check Sonarr configuration if any configured hostname requires it
         initialize_sonarr_client(shared_state)
-        if not is_sonarr_configured(shared_state):
-            sonarr_required_sites = [
-                site
-                for site in get_sonarr_required_hostnames()
-                if Config("Hostnames").get(site)
-            ]
-            if sonarr_required_sites:
-                sonarr_config(shared_state, sonarr_required_sites)
+        radarr_required_sites = [
+            site
+            for site in get_radarr_required_hostnames()
+            if Config("Hostnames").get(site)
+        ]
+        sonarr_required_sites = [
+            site
+            for site in get_sonarr_required_hostnames()
+            if Config("Hostnames").get(site)
+        ]
+        radarr_skipped = is_radarr_skipped()
+        sonarr_skipped = is_sonarr_skipped()
+        if radarr_skipped and radarr_required_sites:
+            warn("Radarr setup was skipped; movie search is unavailable.")
+        if sonarr_skipped and sonarr_required_sites:
+            warn("Sonarr setup was skipped; TV search is unavailable.")
+        if (
+            radarr_skipped
+            and sonarr_skipped
+            and (radarr_required_sites or sonarr_required_sites)
+        ):
+            error(
+                "Both Radarr and Sonarr setup were skipped. Configure one to continue."
+            )
+            radarr_skipped = False
+            sonarr_skipped = False
+
+        (
+            radarr_only_sites,
+            sonarr_only_sites,
+            dual_category_sites,
+        ) = split_arr_required_sites(radarr_required_sites, sonarr_required_sites)
+
+        if (
+            radarr_only_sites
+            and not is_radarr_configured(shared_state)
+            and not radarr_skipped
+        ):
+            radarr_config(shared_state, sorted(radarr_only_sites))
+            initialize_radarr_client(shared_state)
+        if (
+            sonarr_only_sites
+            and not is_sonarr_configured(shared_state)
+            and not sonarr_skipped
+        ):
+            sonarr_config(shared_state, sorted(sonarr_only_sites))
+            initialize_sonarr_client(shared_state)
+
+        if (
+            dual_category_sites
+            and not is_radarr_configured(shared_state)
+            and not is_sonarr_configured(shared_state)
+        ):
+            if radarr_skipped:
+                sonarr_config(shared_state, sorted(dual_category_sites))
                 initialize_sonarr_client(shared_state)
+            elif sonarr_skipped:
+                radarr_config(shared_state, sorted(dual_category_sites))
+                initialize_radarr_client(shared_state)
+            else:
+                client = select_arr_client_config(
+                    shared_state,
+                    sorted(dual_category_sites),
+                    sorted(dual_category_sites),
+                )
+                if client == "radarr":
+                    radarr_config(shared_state, sorted(dual_category_sites))
+                    initialize_radarr_client(shared_state)
+                elif client == "sonarr":
+                    sonarr_config(shared_state, sorted(dual_category_sites))
+                    initialize_sonarr_client(shared_state)
 
         config = Config("JDownloader")
         user = config.get("user")
