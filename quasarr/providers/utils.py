@@ -220,15 +220,18 @@ def is_site_usable(shared_state, shorthand):
     if not hostname:
         return False
 
-    # Check Radarr requirement (independent of login requirement)
-    if shorthand in get_radarr_required_hostnames():
-        if not radarr_api.get_client(shared_state):
-            return False
+    # Keep dual-category sources usable with either configured Arr client.
+    # Import lazily because setup modules also consume provider services.
+    from quasarr.storage.setup.arr import missing_arr_client_requirement
 
-    # Check Sonarr requirement (independent of login requirement)
-    if shorthand in get_sonarr_required_hostnames():
-        if not sonarr_api.get_client(shared_state):
-            return False
+    if missing_arr_client_requirement(
+        shorthand,
+        set(get_radarr_required_hostnames()),
+        set(get_sonarr_required_hostnames()),
+        bool(radarr_api.get_client(shared_state)),
+        bool(sonarr_api.get_client(shared_state)),
+    ):
+        return False
 
     if shorthand not in get_login_required_hostnames():
         return True  # No login needed, hostname is enough

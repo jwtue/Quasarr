@@ -56,7 +56,7 @@ def is_radarr_configured(shared_state):
 
 
 def is_radarr_skipped():
-    return False
+    return bool(DataBase(SKIP_RADARR_TABLE).retrieve("skipped"))
 
 
 def get_radarr_settings_data(shared_state):
@@ -89,11 +89,23 @@ def _normalize_inputs(url, api_key):
     return url, api_key, None
 
 
-def _configured_required_sites():
-    from quasarr.search.sources.helpers import get_radarr_required_hostnames
+def _configured_required_sites(shared_state):
+    from quasarr.providers.sonarr_api import get_client as get_sonarr_client
+    from quasarr.search.sources.helpers import (
+        get_radarr_required_hostnames,
+        get_sonarr_required_hostnames,
+    )
 
     hostnames = Config("Hostnames")
-    return [site for site in get_radarr_required_hostnames() if hostnames.get(site)]
+    radarr_sites = {
+        site for site in get_radarr_required_hostnames() if hostnames.get(site)
+    }
+    sonarr_sites = {
+        site for site in get_sonarr_required_hostnames() if hostnames.get(site)
+    }
+    if get_sonarr_client(shared_state):
+        return radarr_sites - sonarr_sites
+    return radarr_sites
 
 
 def _verify_credentials(shared_state, url, api_key):
@@ -152,7 +164,7 @@ def save_radarr_settings(shared_state):
     if err:
         return {"success": False, "message": err}
 
-    if not url and _configured_required_sites():
+    if not url and _configured_required_sites(shared_state):
         response.status = 400
         return {
             "success": False,

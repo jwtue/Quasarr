@@ -42,6 +42,7 @@ from quasarr.search.sources.helpers import (
     get_sonarr_required_hostnames,
 )
 from quasarr.storage.config import Config
+from quasarr.storage.setup.arr import missing_arr_client_requirement
 from quasarr.storage.setup.radarr import is_radarr_configured
 from quasarr.storage.setup.sonarr import is_sonarr_configured
 from quasarr.storage.sqlite_database import DataBase
@@ -112,9 +113,9 @@ def get_api(shared_state_dict, shared_state_lock):
             # Check if it's working (no issues and dependencies met)
             if shorthand in hostname_issues:
                 continue
-            if shorthand in radarr_required and not radarr_ok:
-                continue
-            if shorthand in sonarr_required and not sonarr_ok:
+            if missing_arr_client_requirement(
+                shorthand, radarr_required, sonarr_required, radarr_ok, sonarr_ok
+            ):
                 continue
             working_count += 1
 
@@ -512,7 +513,7 @@ def get_api(shared_state_dict, shared_state_lock):
                 <summary id="arrSummary">🎬 *arr</summary>
                 <div class="api-settings">
                     <p class="api-hint">
-                        Optional. Used by Quasarr to look up metadata via the *arr APIs.
+                        Required for configured movie or TV sources. Configure the client(s) you use.
                     </p>
 
                     <div class="notification-provider-card">

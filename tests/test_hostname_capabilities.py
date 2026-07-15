@@ -159,8 +159,8 @@ class EditorRenderHelpersTests(unittest.TestCase):
         self.assertIn("🔒 Invite Only", html)
         self.assertIn("🔑 Login Required", html)
         self.assertIn("🛡️ FlareSolverr Required", html)
-        self.assertIn("📡 Radarr Required", html)
-        self.assertIn("📡 Sonarr Required", html)
+        self.assertNotIn("📡 Radarr Required", html)
+        self.assertNotIn("📡 Sonarr Required", html)
         self.assertLess(html.index('data-lang="en"'), html.index("🔒 Invite Only"))
         self.assertLess(html.index("🔒 Invite Only"), html.index("🔑 Login Required"))
         self.assertLess(
