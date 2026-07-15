@@ -146,13 +146,13 @@ def setup_arr_routes(app):
                 if success and not failed:
                     info(f"<y>{title}</y> added successfully!")
                 else:
-                    info(
+                    warn(
                         f"<y>{title}</y> added as failed package! See log for details."
                     )
 
                 nzo_ids.append(package_id)
             except KeyError:
-                info(f"Failed to download <y>{title}</y> - no package_id returned")
+                error(f"Failed to download <y>{title}</y> - no package_id returned")
 
         response = {"status": True, "nzo_ids": nzo_ids}
         if not nzo_ids:
@@ -255,14 +255,14 @@ def setup_arr_routes(app):
                         if success and not failed:
                             info(f'"{title} added successfully!')
                         else:
-                            info(
+                            warn(
                                 f'"{title} added as failed package! See log for details.'
                             )
 
                         nzo_ids.append(package_id)
                         return {"status": True, "nzo_ids": nzo_ids}
                     except KeyError:
-                        info(
+                        error(
                             f'Failed to download "{parsed_payload["title"]}" - no package_id returned'
                         )
                         return {"status": True, "nzo_ids": [], "quasarr_error": True}

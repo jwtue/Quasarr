@@ -6,7 +6,7 @@
 # Original contribution by Riourik (https://github.com/riourik), PR #360.
 #
 # Flow (IMDb-driven):
-#   1. IMDb ID -> localized title via get_localized_title(..., "fr")
+#   1. IMDb ID -> localized title via category-bound get_localized_title(..., "fr")
 #   2. search the title endpoint -> candidate entries (carry imdb_id + id)
 #   3. match the entry whose imdb_id equals the requested IMDb ID
 #   4. the download endpoint -> per-quality hoster links for that entry
@@ -246,10 +246,11 @@ class Source(AbstractSearchSource):
         imdb_id,
         shared_state,
         timeout,
+        search_category,
         season=None,
         episode=None,
     ):
-        title = get_localized_title(shared_state, imdb_id, "fr")
+        title = get_localized_title(shared_state, imdb_id, "fr", search_category)
         if not title:
             return []
 
@@ -338,6 +339,7 @@ class Source(AbstractSearchSource):
                         imdb_id,
                         shared_state,
                         FEED_REQUEST_TIMEOUT_SECONDS,
+                        search_category,
                         season=season,
                         episode=episode,
                     )
@@ -386,6 +388,7 @@ class Source(AbstractSearchSource):
                 imdb_id,
                 shared_state,
                 SEARCH_REQUEST_TIMEOUT_SECONDS,
+                search_category,
                 season=season,
                 episode=episode,
             )

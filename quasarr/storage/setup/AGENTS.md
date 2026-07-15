@@ -2,7 +2,7 @@
 
 ## Purpose
 
-First-run and reconfiguration flows: each prerequisite gets a temporary web server that blocks startup until configured or explicitly skipped, plus reusable save/verify handlers consumed by the main config API.
+First-run and reconfiguration flows: each prerequisite gets a temporary web server that blocks startup until configured or, where allowed, explicitly skipped, plus reusable save/verify handlers consumed by the main config API.
 
 ## Ownership
 
@@ -11,9 +11,10 @@ First-run and reconfiguration flows: each prerequisite gets a temporary web serv
 ## Local Contracts
 
 - Module shape: pure `save_*`/`get_*_data`/`refresh_*`/`is_*_skipped` handlers reusable by the main API; the setup-blocking modules (path, hostnames, flaresolverr, radarr, sonarr, jdownloader) additionally provide a `*_config(...)` function that builds a temporary Bottle app (`add_no_cache_headers` + `setup_auth` applied) and returns `Server(...).serve_temporarily()` — signatures vary (`radarr_config`/`sonarr_config` also take `required_sites`; `hostname_credentials_config` takes `shorthand` and `domain`). `notifications.py`, `timeouts.py`, and `filecrypt.py` provide only save/refresh handlers, no temporary server. Completion is signaled by setting `quasarr.providers.web_server.temp_server_success = True` inside a route handler.
-- Startup order in `run()`: path → hostnames (must end with ≥ 1 valid hostname) → per-source credentials (skippable, table `skip_login`) → FlareSolverr (skippable) → Radarr/Sonarr (only when a configured source requires them, skippable) → JDownloader (NOT skippable) → notification + timeout + filecrypt init → API key generation.
+- Startup order in `run()`: path → hostnames (must end with ≥ 1 valid hostname) → per-source credentials (skippable, table `skip_login`) → FlareSolverr (skippable) → Radarr when any configured source supports movies and Sonarr when any configured source supports TV (both mandatory and not skippable) → JDownloader (NOT skippable) → notification + timeout + filecrypt init → API key generation.
 - `hostnames.py` renders source metadata from `quasarr.search.sources.helpers.get_source_metadata()`: language flags, supported category chips, account/invite/login chips, FlareSolverr chips, and feed-client chips. Windows flag emoji fallback uses SVGs from `providers.html_images`.
-- Skip flags live in tables `skip_login`, `skip_flaresolverr`, `skip_radarr`, `skip_sonarr`; they are stored only as the string `'true'` and cleared by deleting the row. Never write `'false'` — readers treat any stored value as skipped via truthiness. (The `'true'`/`'false'` pair convention applies to the notification-settings, timeout-slow-mode, and filecrypt-enabled tables instead.)
+- Active skip flags live in tables `skip_login` and `skip_flaresolverr`; they are stored only as the string `'true'` and cleared by deleting the row. Never write `'false'` — readers treat any stored value as skipped via truthiness. Radarr/Sonarr expose legacy skip-clearing helpers for compatibility, but `is_*_skipped()` always returns false and setup offers no skip route. (The `'true'`/`'false'` pair convention applies to notification-settings, timeout-slow-mode, and filecrypt-enabled tables instead.)
+- Radarr/Sonarr startup forms require both fields server-side as well as in HTML. Main settings reject clearing a client while any configured source supports that client's media category; runtime search guards remain the final protection against missing clients.
 - `timeouts.py` refresh calls `constants.apply_timeout_slow_mode_settings()` — the only sanctioned way timeouts change at runtime.
 - `filecrypt.py` is the filecrypt kill switch: table `filecrypt_enabled` (constant `FILECRYPT_ENABLED_TABLE`), default `True` when unset, refreshed into `shared_state.values["filecrypt_enabled"]`. `quasarr/downloads/__init__.py` reads that cached value to drop filecrypt links at grab time — this module does not touch download logic itself.
 - Radarr/Sonarr verification resolves fixed IMDb IDs through the respective API client and caches the client in shared_state via `set_client` before `is_*_configured` checks run.

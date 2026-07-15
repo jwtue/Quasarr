@@ -42,8 +42,8 @@ from quasarr.search.sources.helpers import (
     get_sonarr_required_hostnames,
 )
 from quasarr.storage.config import Config
-from quasarr.storage.setup.radarr import is_radarr_configured, is_radarr_skipped
-from quasarr.storage.setup.sonarr import is_sonarr_configured, is_sonarr_skipped
+from quasarr.storage.setup.radarr import is_radarr_configured
+from quasarr.storage.setup.sonarr import is_sonarr_configured
 from quasarr.storage.sqlite_database import DataBase
 
 
@@ -92,10 +92,8 @@ def get_api(shared_state_dict, shared_state_lock):
 
         radarr_required = set(get_radarr_required_hostnames())
         radarr_ok = is_radarr_configured(shared_state)
-        radarr_skipped = is_radarr_skipped()
         sonarr_required = set(get_sonarr_required_hostnames())
         sonarr_ok = is_sonarr_configured(shared_state)
-        sonarr_skipped = is_sonarr_skipped()
 
         for site_key in shared_state.values["sites"]:
             shorthand = site_key.lower()
@@ -108,13 +106,6 @@ def get_api(shared_state_dict, shared_state_lock):
                 skip_val = skip_login_db.retrieve(shorthand)
                 if skip_val and str(skip_val).lower() == "true":
                     continue
-            # Skip Radarr-required hostnames if Radarr was skipped
-            if shorthand in radarr_required and radarr_skipped and not radarr_ok:
-                continue
-            # Skip Sonarr-required hostnames if Sonarr was skipped
-            if shorthand in sonarr_required and sonarr_skipped and not sonarr_ok:
-                continue
-
             # This hostname counts toward total
             total_count += 1
 
