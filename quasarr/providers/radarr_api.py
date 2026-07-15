@@ -60,6 +60,12 @@ class RadarrAPIClient:
             return None
         return self._get("/movie/lookup/imdb", params={"imdbId": imdb_id})
 
+    def movie_lookup(self, term):
+        """Return Radarr movie lookup candidates for a free-form title."""
+        if not term:
+            return []
+        return self._get("/movie/lookup", params={"term": term}) or []
+
     def wanted(self, kind, page=1, page_size=50):
         """Return a wanted movies page (``kind`` is ``missing`` or ``cutoff``)."""
         return (

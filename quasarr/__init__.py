@@ -48,9 +48,7 @@ from quasarr.storage.setup import (
     initialize_sonarr_client,
     initialize_timeout_slow_mode_settings,
     is_radarr_configured,
-    is_radarr_skipped,
     is_sonarr_configured,
-    is_sonarr_skipped,
     jdownloader_config,
     path_config,
     radarr_config,
@@ -187,7 +185,7 @@ def run():
 
         # Check Radarr configuration if any configured hostname requires it
         initialize_radarr_client(shared_state)
-        if not is_radarr_configured(shared_state) and not is_radarr_skipped():
+        if not is_radarr_configured(shared_state):
             radarr_required_sites = [
                 site
                 for site in get_radarr_required_hostnames()
@@ -199,7 +197,7 @@ def run():
 
         # Check Sonarr configuration if any configured hostname requires it
         initialize_sonarr_client(shared_state)
-        if not is_sonarr_configured(shared_state) and not is_sonarr_skipped():
+        if not is_sonarr_configured(shared_state):
             sonarr_required_sites = [
                 site
                 for site in get_sonarr_required_hostnames()

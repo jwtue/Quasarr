@@ -12,6 +12,7 @@ The Newznab-facing search layer: `get_search_results()` fans a single *arr reque
 ## Local Contracts
 
 - Per-source gating before dispatch: hostname configured, category in `supported_categories`, category whitelist from `get_search_category_sources`, `supports_imdb` for the imdb branch, `supports_phrase` for the phrase branch, `supports_absolute_numbering` when an episode is given without a season, and `supports_date_numbering` for Sonarr's year + `MM/DD` episode shape. The feed branch checks only hostname/category/whitelist.
+- Movie searches and feeds require a cached Radarr client; TV searches and feeds require a cached Sonarr client. Missing clients stop before source dispatch with an error. Book and music phrase searches have no Arr-client gate. IMDb searches warm the metadata cache from the category's required client before fan-out.
 - Date-numbered requests are parsed once into a validated `datetime.date`; regular `season`/`episode` are cleared before dispatch and proven sources receive only `episode_date`. Invalid calendar dates stay on the normal numbering path.
 - The method names `search` and `feed` are load-bearing — dispatch is `getattr(source, action)`.
 - Cache TTL is 300s for search, 60s for feed; the key nulls `start_time` and uses the cache-owner category. Cached entries skip execution entirely, so source methods must be safe to skip.

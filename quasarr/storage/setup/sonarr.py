@@ -56,7 +56,7 @@ def is_sonarr_configured(shared_state):
 
 
 def is_sonarr_skipped():
-    return bool(DataBase(SKIP_SONARR_TABLE).retrieve("skipped"))
+    return False
 
 
 def get_sonarr_settings_data(shared_state):
@@ -87,6 +87,13 @@ def _normalize_inputs(url, api_key):
         return None, None, "Sonarr URL and API key must both be set, or both empty."
 
     return url, api_key, None
+
+
+def _configured_required_sites():
+    from quasarr.search.sources.helpers import get_sonarr_required_hostnames
+
+    hostnames = Config("Hostnames")
+    return [site for site in get_sonarr_required_hostnames() if hostnames.get(site)]
 
 
 def _verify_credentials(shared_state, url, api_key):
@@ -145,6 +152,13 @@ def save_sonarr_settings(shared_state):
     if err:
         return {"success": False, "message": err}
 
+    if not url and _configured_required_sites():
+        response.status = 400
+        return {
+            "success": False,
+            "message": "Sonarr is required while TV sources are configured.",
+        }
+
     if url and api_key:
         ok, verify_err = _verify_credentials(shared_state, url, api_key)
         if not ok:
@@ -181,22 +195,17 @@ def _sonarr_setup_form_html(required_sites):
 
     return f"""
     <p>One or more configured hostnames ({site_list}) require Sonarr to look up
-    series metadata. Provide your Sonarr URL and API key below, or skip to
-    launch Quasarr without Sonarr integration.</p>
+    series metadata. Provide your Sonarr URL and API key below.</p>
 
     <form action="/api/sonarr/save" method="post" onsubmit="return handleSubmit(this)">
         <label for="url">Sonarr URL</label>
-        <input type="text" id="url" name="url" placeholder="http://192.168.0.1:8989" value="{current_url}"><br>
+        <input type="text" id="url" name="url" placeholder="http://192.168.0.1:8989" value="{current_url}" required><br>
         <label for="api_key">Sonarr API Key</label>
-        <input type="text" id="api_key" name="api_key" placeholder="Sonarr API key" value="{current_api_key}"><br>
+        <input type="text" id="api_key" name="api_key" placeholder="Sonarr API key" value="{current_api_key}" required><br>
         <div class="button-row">
             {render_button("Save", "primary", {"type": "submit", "id": "submitBtn"})}
-            <button type="button" class="btn-warning" id="skipBtn" onclick="skipSonarr()">Skip for now</button>
         </div>
     </form>
-    <p style="font-size:0.875rem; color:var(--secondary, #6c757d); margin-top:1rem;">
-        Skipping will allow Quasarr to start, but {site_list} won't be fully usable until Sonarr is configured.
-    </p>
     <script>
     var formSubmitted = false;
     function handleSubmit(form) {{
@@ -204,35 +213,7 @@ def _sonarr_setup_form_html(required_sites):
         formSubmitted = true;
         var btn = document.getElementById('submitBtn');
         if (btn) {{ btn.disabled = true; btn.textContent = 'Saving...'; }}
-        var skipBtn = document.getElementById('skipBtn');
-        if (skipBtn) {{ skipBtn.disabled = true; }}
         return true;
-    }}
-    function skipSonarr() {{
-        if (formSubmitted) return;
-        formSubmitted = true;
-        var skipBtn = document.getElementById('skipBtn');
-        var submitBtn = document.getElementById('submitBtn');
-        if (skipBtn) {{ skipBtn.disabled = true; skipBtn.textContent = 'Skipping...'; }}
-        if (submitBtn) {{ submitBtn.disabled = true; }}
-
-        quasarrApiFetch('/api/sonarr/skip', {{ method: 'POST' }})
-        .then(function(response) {{
-            if (response.ok) {{
-                window.location.href = '/skip-success';
-            }} else {{
-                showModal('Error', 'Failed to skip Sonarr setup');
-                formSubmitted = false;
-                if (skipBtn) {{ skipBtn.disabled = false; skipBtn.textContent = 'Skip for now'; }}
-                if (submitBtn) {{ submitBtn.disabled = false; }}
-            }}
-        }})
-        .catch(function(error) {{
-            showModal('Error', 'Error: ' + error.message);
-            formSubmitted = false;
-            if (skipBtn) {{ skipBtn.disabled = false; skipBtn.textContent = 'Skip for now'; }}
-            if (submitBtn) {{ submitBtn.disabled = false; }}
-        }});
     }}
     </script>
     <style>
@@ -242,20 +223,6 @@ def _sonarr_setup_form_html(required_sites):
             justify-content: center;
             flex-wrap: wrap;
             margin-top: 1rem;
-        }}
-        .btn-warning {{
-            background-color: #ffc107;
-            color: #212529;
-            border: 1.5px solid #d39e00;
-            padding: 0.5rem 1rem;
-            font-size: 1rem;
-            border-radius: 0.5rem;
-            font-weight: 500;
-            cursor: pointer;
-        }}
-        .btn-warning:hover {{
-            background-color: #e0a800;
-            border-color: #c69500;
         }}
     </style>
     """
@@ -270,6 +237,9 @@ def _save_sonarr_form(shared_state):
     url, api_key, err = _normalize_inputs(url, api_key)
     if err:
         return render_fail(err)
+
+    if not url:
+        return render_fail("Sonarr URL and API key are required.")
 
     if url and api_key:
         ok, verify_err = _verify_credentials(shared_state, url, api_key)
@@ -297,19 +267,6 @@ def sonarr_config(shared_state, required_sites):
             _sonarr_setup_form_html(required_sites),
         )
 
-    @app.get("/skip-success")
-    def skip_success():
-        return render_reconnect_success(
-            "Sonarr setup skipped. You can configure it later in the web UI."
-        )
-
-    @app.post("/api/sonarr/skip")
-    def skip_sonarr():
-        DataBase(SKIP_SONARR_TABLE).update_store("skipped", "true")
-        info("Sonarr setup skipped by user choice")
-        quasarr.providers.web_server.temp_server_success = True
-        return {"success": True}
-
     @app.post("/api/sonarr/save")
     def save_sonarr_form_route():
         return _save_sonarr_form(shared_state)
@@ -319,9 +276,7 @@ def sonarr_config(shared_state, required_sites):
         f'Sonarr configuration required for: "{site_list}". '
         f'Starting web server for config at: "{shared_state.values["external_address"]}".'
     )
-    info(
-        "Please enter your Sonarr URL and API key now, or skip to allow Quasarr to launch!"
-    )
+    info("Please enter your Sonarr URL and API key now to allow Quasarr to launch!")
     quasarr.providers.web_server.temp_server_success = False
     return Server(
         app, listen="0.0.0.0", port=shared_state.values["port"]

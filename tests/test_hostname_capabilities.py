@@ -1,7 +1,7 @@
 import inspect
 import unittest
 
-from quasarr.constants import SEARCH_CAT_SHOWS
+from quasarr.constants import SEARCH_CAT_MOVIES, SEARCH_CAT_SHOWS
 from quasarr.providers.html_images import FLAG_SVGS, LANGUAGE_FLAG_EMOJI
 from quasarr.search.sources import get_sources
 from quasarr.search.sources.helpers import get_source_metadata
@@ -114,6 +114,18 @@ class SourceMetadataTests(unittest.TestCase):
         self.assertTrue(metadata["al"]["requires_flaresolverr"])
         self.assertTrue(metadata["sl"]["requires_flaresolverr"])
         self.assertTrue(metadata["wd"]["requires_flaresolverr"])
+
+    def test_movie_and_tv_categories_derive_arr_requirements(self):
+        for key, source in get_sources().items():
+            with self.subTest(source=key):
+                self.assertEqual(
+                    SEARCH_CAT_MOVIES in source.supported_categories,
+                    source.requires_radarr,
+                )
+                self.assertEqual(
+                    SEARCH_CAT_SHOWS in source.supported_categories,
+                    source.requires_sonarr,
+                )
 
 
 class EditorRenderHelpersTests(unittest.TestCase):

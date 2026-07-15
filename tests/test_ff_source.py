@@ -54,6 +54,71 @@ def _build_shared_state(hostnames):
 
 
 class FfSourceTests(unittest.TestCase):
+    def test_search_uses_single_canonical_localized_query(self):
+        host = "host-ff.invalid"
+        ascii_url = f"https://{host}/api/v2/search?q=Synthetic+Uemlaut&ql=DE"
+        movie_url = f"https://{host}/synthetic-movie"
+        api_url = f"https://{host}/api/v1/synthetic-token?filter="
+        requested_urls = []
+
+        movie_html = """
+        <a href="https://www.imdb.invalid/title/tt0000001/">IMDB</a>
+        <script>initMovie('synthetic-token')</script>
+        """
+        api_html = """
+        <div class="entry">
+          <span class="morespec">Synthetic.Uemlaut.2030.1080p.WEB-GROUP</span>
+          <span class="audiotag"><small>Größe:</small> 1 GB</span>
+        </div>
+        """
+
+        def fake_get(url, headers=None, timeout=None):
+            requested_urls.append(url)
+            if url == ascii_url:
+                return FakeResponse(
+                    url,
+                    json_data={
+                        "result": [
+                            {
+                                "title": "Synthetic Uemlaut",
+                                "url_id": "synthetic-movie",
+                            }
+                        ]
+                    },
+                )
+            if url == movie_url:
+                return FakeResponse(url, text=movie_html)
+            if url == api_url:
+                return FakeResponse(url, json_data={"html": api_html})
+            raise AssertionError(f"Unexpected URL requested: {url}")
+
+        with (
+            patch("quasarr.search.sources.ff.requests.get", side_effect=fake_get),
+            patch(
+                "quasarr.search.sources.ff.get_localized_title",
+                return_value="Synthetic Uemlaut",
+            ),
+            patch("quasarr.search.sources.ff.get_recently_searched", return_value={}),
+            patch(
+                "quasarr.search.sources.ff.generate_download_link",
+                return_value="download://synthetic",
+            ),
+            patch("quasarr.search.sources.ff.clear_hostname_issue"),
+        ):
+            result = FfSearchSource().search(
+                _build_shared_state({"ff": host}),
+                time.time(),
+                2000,
+                "tt0000001",
+            )
+
+        self.assertEqual([ascii_url, movie_url, api_url], requested_urls)
+        self.assertEqual(1, len(result))
+        self.assertEqual(
+            "Synthetic.Uemlaut.2030.1080p.WEB-GROUP",
+            result[0]["details"]["title"],
+        )
+
     def test_feed_cross_references_movie_api(self):
         host = "host-ff.invalid"
         feed_url = f"https://{host}/updates/2026-06-24#list"
