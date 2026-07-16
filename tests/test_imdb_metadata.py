@@ -353,6 +353,228 @@ class IMDbMetadataTests(unittest.TestCase):
             "Synthetic German Title", IMDbHTML._parse_localized_title(html, "de")
         )
 
+    def test_html_parser_uses_iso_country_code_from_embedded_aka(self):
+        payload = {
+            "props": {
+                "pageProps": {
+                    "contentData": {
+                        "data": {
+                            "title": {
+                                "akas": {
+                                    "edges": [
+                                        {
+                                            "node": {
+                                                "country": {
+                                                    "id": "DE",
+                                                    "text": "Synthetic Country Label",
+                                                },
+                                                "displayableProperty": {
+                                                    "value": {
+                                                        "plainText": "Synthetic German Title"
+                                                    }
+                                                },
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        html = (
+            '<html><script id="__NEXT_DATA__" type="application/json">'
+            f"{dumps(payload)}"
+            "</script></html>"
+        )
+
+        self.assertEqual(
+            "Synthetic German Title", IMDbHTML._parse_localized_title(html, "de")
+        )
+
+    def test_html_parser_rejects_conflicting_language_in_multilingual_country(self):
+        payload = {
+            "props": {
+                "pageProps": {
+                    "contentData": {
+                        "data": {
+                            "title": {
+                                "akas": {
+                                    "edges": [
+                                        {
+                                            "node": {
+                                                "country": {"id": "CA"},
+                                                "language": {"id": "en"},
+                                                "displayableProperty": {
+                                                    "value": {
+                                                        "plainText": "Synthetic English Title"
+                                                    }
+                                                },
+                                            }
+                                        },
+                                        {
+                                            "node": {
+                                                "country": {"id": "CA"},
+                                                "language": {"id": "fr"},
+                                                "displayableProperty": {
+                                                    "value": {
+                                                        "plainText": "Synthetic French Title"
+                                                    }
+                                                },
+                                            }
+                                        },
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        html = (
+            '<html><script id="__NEXT_DATA__" type="application/json">'
+            f"{dumps(payload)}"
+            "</script></html>"
+        )
+
+        self.assertEqual(
+            "Synthetic French Title", IMDbHTML._parse_localized_title(html, "fr")
+        )
+
+    def test_html_parser_prefers_visible_aka_over_proven_page_title(self):
+        payload = {
+            "props": {
+                "pageProps": {
+                    "requestContext": {
+                        "sidecar": {
+                            "localizationResponse": {
+                                "userLanguage": "de-DE",
+                                "isFullLocalizationEnabled": True,
+                                "isOriginalTitlePreferenceSet": False,
+                            }
+                        }
+                    },
+                    "contentData": {
+                        "entityMetadata": {
+                            "titleText": {"text": "Synthetic German Display Title"}
+                        }
+                    },
+                }
+            }
+        }
+        html = (
+            '<html><script id="__NEXT_DATA__" type="application/json">'
+            f"{dumps(payload)}"
+            "</script>"
+            '<section data-testid="sub-section-akas"><ul><li>'
+            "<span>Germany</span><span>Synthetic Explicit German AKA</span>"
+            "</li></ul></section></html>"
+        )
+
+        self.assertEqual(
+            "Synthetic Explicit German AKA",
+            IMDbHTML._parse_localized_title(html, "de"),
+        )
+
+    def test_html_parser_skips_conflicting_visible_country_qualifier(self):
+        html = (
+            '<section data-testid="sub-section-akas"><ul>'
+            "<li><span>Canada</span><span>Synthetic English Title</span>"
+            "<span>(English)</span></li>"
+            "<li><span>Canada</span><span>Synthetic French Title</span>"
+            "<span>(French)</span></li>"
+            "</ul></section>"
+        )
+
+        self.assertEqual(
+            "Synthetic French Title", IMDbHTML._parse_localized_title(html, "fr")
+        )
+
+    def test_html_parser_uses_title_text_only_with_proven_locale_context(self):
+        payload = {
+            "props": {
+                "pageProps": {
+                    "requestContext": {
+                        "sidecar": {
+                            "localizationResponse": {
+                                "userLanguage": "de-DE",
+                                "isFullLocalizationEnabled": True,
+                                "isOriginalTitlePreferenceSet": False,
+                            }
+                        }
+                    },
+                    "contentData": {
+                        "entityMetadata": {
+                            "titleText": {"text": "Synthetic German Display Title"}
+                        }
+                    },
+                }
+            }
+        }
+        html = (
+            '<html><script id="__NEXT_DATA__" type="application/json">'
+            f"{dumps(payload)}"
+            "</script></html>"
+        )
+
+        self.assertEqual(
+            "Synthetic German Display Title",
+            IMDbHTML._parse_localized_title(html, "de"),
+        )
+
+    def test_html_parser_rejects_title_text_with_unproven_locale_context(self):
+        localization_cases = (
+            {
+                "userLanguage": "en-US",
+                "isFullLocalizationEnabled": True,
+                "isOriginalTitlePreferenceSet": False,
+            },
+            {
+                "userLanguage": "de-DE",
+                "isFullLocalizationEnabled": False,
+                "isOriginalTitlePreferenceSet": False,
+            },
+            {
+                "userLanguage": "de-DE",
+                "isFullLocalizationEnabled": True,
+                "isOriginalTitlePreferenceSet": True,
+            },
+        )
+        for localization in localization_cases:
+            with self.subTest(localization=localization):
+                payload = {
+                    "props": {
+                        "pageProps": {
+                            "requestContext": {
+                                "sidecar": {"localizationResponse": localization}
+                            },
+                            "contentData": {
+                                "entityMetadata": {
+                                    "titleText": {
+                                        "text": "Synthetic Unproven Display Title"
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+                html = (
+                    '<html><script id="__NEXT_DATA__" type="application/json">'
+                    f"{dumps(payload)}"
+                    "</script></html>"
+                )
+
+                self.assertIsNone(IMDbHTML._parse_localized_title(html, "de"))
+
+    def test_html_lookup_uses_explicit_locale_path(self):
+        with patch.object(IMDbHTML, "_request", return_value=None) as request:
+            self.assertIsNone(IMDbHTML.get_localized_title("tt0000015", "de"))
+
+        request.assert_called_once_with(
+            "https://www.imdb.com/de/title/tt0000015/releaseinfo/", "de"
+        )
+
     def test_html_request_sets_explicit_locale_and_crawler_user_agent(self):
         html = (
             '<section data-testid="sub-section-akas"><ul><li>'
