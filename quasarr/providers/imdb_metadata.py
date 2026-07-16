@@ -112,7 +112,7 @@ class IMDbHTML:
             if response.status_code == 200 and response.text:
                 if IMDbHTML._parse_localized_title(response.text, language):
                     return response.text
-                debug("IMDb direct HTML had no country-matched AKA title")
+                debug("IMDb direct HTML had no proven localized title")
         except Exception as e:
             debug(f"IMDb HTML request failed for {url}: {e}")
 
@@ -145,7 +145,7 @@ class IMDbHTML:
                     )
                     if IMDbHTML._parse_localized_title(solution_html, language):
                         return solution_html
-                    debug("IMDb FlareSolverr HTML had no country-matched AKA title")
+                    debug("IMDb FlareSolverr HTML had no proven localized title")
         except Exception as e:
             debug(f"FlareSolverr request failed for {url}: {e}")
 
@@ -162,6 +162,128 @@ class IMDbHTML:
         "ja": ("Japan",),
         "hi": ("India",),
     }
+    _COUNTRY_CODES_BY_LANGUAGE = {
+        "en": ("US", "GB", "CA", "AU"),
+        "de": ("DE", "AT", "CH", "XWG"),
+        "fr": ("FR", "CA", "BE"),
+        "es": ("ES", "MX", "AR"),
+        "it": ("IT",),
+        "pt": ("PT", "BR"),
+        "ru": ("RU", "SUHH"),
+        "ja": ("JP",),
+        "hi": ("IN",),
+    }
+    _LANGUAGE_CODES_BY_NAME = {
+        "english": "en",
+        "german": "de",
+        "french": "fr",
+        "spanish": "es",
+        "italian": "it",
+        "portuguese": "pt",
+        "russian": "ru",
+        "japanese": "ja",
+        "hindi": "hi",
+    }
+
+    @staticmethod
+    def _next_data(soup):
+        node = soup.find("script", id="__NEXT_DATA__")
+        if node is None or not node.string:
+            return None
+        try:
+            return loads(node.string)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _localized_titles_from_next_data(next_data, language):
+        if not isinstance(next_data, dict):
+            return None, None
+
+        props = next_data.get("props")
+        page_props = props.get("pageProps") if isinstance(props, dict) else None
+        if not isinstance(page_props, dict):
+            return None, None
+        content_data = page_props.get("contentData")
+        if not isinstance(content_data, dict):
+            return None, None
+        data = content_data.get("data")
+        title_data = data.get("title") if isinstance(data, dict) else {}
+        if not isinstance(title_data, dict):
+            title_data = {}
+
+        country_codes = IMDbHTML._COUNTRY_CODES_BY_LANGUAGE.get(language, ())
+        country_matches = []
+        akas = title_data.get("akas")
+        edges = akas.get("edges", []) if isinstance(akas, dict) else []
+        for edge in edges or []:
+            node = edge.get("node", {}) if isinstance(edge, dict) else {}
+            if not isinstance(node, dict):
+                continue
+            country = node.get("country")
+            country_code = country.get("id") if isinstance(country, dict) else None
+            aka_language = node.get("language")
+            aka_language = (
+                aka_language.get("id", "").lower()
+                if isinstance(aka_language, dict)
+                else ""
+            )
+            displayable_property = node.get("displayableProperty")
+            value = (
+                displayable_property.get("value")
+                if isinstance(displayable_property, dict)
+                else None
+            )
+            title = value.get("plainText") if isinstance(value, dict) else None
+            if not title:
+                continue
+            if aka_language == language:
+                return title, None
+            if country_code in country_codes and not aka_language:
+                country_matches.append(title)
+
+        if country_matches:
+            return country_matches[0], None
+
+        request_context = page_props.get("requestContext")
+        sidecar = (
+            request_context.get("sidecar")
+            if isinstance(request_context, dict)
+            else None
+        )
+        localization = (
+            sidecar.get("localizationResponse") if isinstance(sidecar, dict) else None
+        )
+        if not isinstance(localization, dict):
+            return None, None
+        user_language = localization.get("userLanguage", "").split("-", 1)[0].lower()
+        locale_is_proven = (
+            user_language == language
+            and localization.get("isFullLocalizationEnabled") is True
+            and localization.get("isOriginalTitlePreferenceSet") is False
+        )
+        if not locale_is_proven:
+            return None, None
+
+        entity_metadata = content_data.get("entityMetadata")
+        title_text = (
+            entity_metadata.get("titleText")
+            if isinstance(entity_metadata, dict)
+            else None
+        ) or title_data.get("titleText")
+        localized_title = (
+            title_text.get("text") if isinstance(title_text, dict) else None
+        )
+        return None, localized_title
+
+    @staticmethod
+    def _row_has_conflicting_language(values, language):
+        for value in values:
+            qualifier = value.strip().strip("()").lower()
+            for name, code in IMDbHTML._LANGUAGE_CODES_BY_NAME.items():
+                if qualifier == name or qualifier.startswith(f"{name} "):
+                    return code != language
+        return False
 
     @staticmethod
     def _parse_localized_title(html_content, language):
@@ -169,17 +291,24 @@ class IMDbHTML:
         if not html_content:
             return None
 
+        language = language.lower()
         soup = BeautifulSoup(html_content, "html.parser")
+        embedded_aka, localized_page_title = IMDbHTML._localized_titles_from_next_data(
+            IMDbHTML._next_data(soup), language
+        )
+        if embedded_aka:
+            return embedded_aka
+
         target_countries = IMDbHTML._COUNTRIES_BY_LANGUAGE.get(language, ())
         if not target_countries:
-            return None
+            return localized_page_title
 
         heading = soup.find(id="akas")
         akas_section = soup.find(attrs={"data-testid": "sub-section-akas"})
         if akas_section is None and heading is not None:
             akas_section = heading.find_parent("section")
         if akas_section is None:
-            return None
+            return localized_page_title
 
         # Current IMDb markup uses generic nested elements under the #akas
         # section. Country and title are adjacent text values in each row.
@@ -200,7 +329,11 @@ class IMDbHTML:
                 country_index = values.index(country)
             except ValueError:
                 continue
-            if country_index + 1 < len(values):
+            if country_index + 1 < len(
+                values
+            ) and not IMDbHTML._row_has_conflicting_language(
+                values[country_index + 2 :], language
+            ):
                 return values[country_index + 1]
 
         # Preserve compatibility with the previous metadata-list markup, but
@@ -217,16 +350,19 @@ class IMDbHTML:
             if not any(target in country for target in target_countries):
                 continue
             values = [value.strip() for value in item.stripped_strings if value.strip()]
-            if len(values) > 1:
+            if len(values) > 1 and not IMDbHTML._row_has_conflicting_language(
+                values[2:], language
+            ):
                 return values[1]
 
-        return None
+        return localized_page_title
 
     @staticmethod
     def get_localized_title(imdb_id, language):
         # The locale-specific HTML metadata is primary. The parser retains an
         # AKA-section fallback for older or browser-rendered responses.
-        url = f"{IMDbHTML._WEB_URL}/title/{imdb_id}/releaseinfo/"
+        language = language.lower()
+        url = f"{IMDbHTML._WEB_URL}/{language}/title/{imdb_id}/releaseinfo/"
         html_content = IMDbHTML._request(url, language)
 
         if html_content:
