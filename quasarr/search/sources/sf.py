@@ -366,7 +366,7 @@ class Source(AbstractSearchSource):
 
                                 if episode_data:
                                     title = re.sub(
-                                        r"(S\d{1,3})", rf"\1E{episode:02d}", title
+                                        r"(S\d{1,3})", rf"\1E{int(episode):02d}", title
                                     )
                                     source = next(iter(episode_data["links"].values()))
                                 else:
@@ -388,7 +388,12 @@ class Source(AbstractSearchSource):
                                             f"Error calculating size for {title}: {e}"
                                         )
                                         mb = 0
-                        except:
+                        except Exception as e:
+                            # Never fail silently here: a swallowed error drops
+                            # the whole release from the results.
+                            debug(
+                                f"Error selecting episode '{episode}' for '{title}': {e}"
+                            )
                             continue
 
                     # check down here on purpose, because the title may be modified at episode stage
